@@ -24,6 +24,8 @@ jobs:
           Invoke-WebRequest -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile tools/cloudflared.exe
       - name: Check source
         run: python -m compileall -q voice_reader
+      - name: Verify DAVE voice support is installed
+        run: python -c "import discord, davey; from importlib.metadata import version; print('discord.py', discord.__version__); print('davey', version('davey'))"
       - name: Build EXE
         run: pyinstaller --noconfirm --clean build.spec
       - name: Confirm output
