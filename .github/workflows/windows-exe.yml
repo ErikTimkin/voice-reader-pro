@@ -1,0 +1,39 @@
+name: Build Windows EXE
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Prepare bundled tools
+        shell: pwsh
+        run: |
+          choco install ffmpeg --no-progress --yes
+          New-Item -ItemType Directory -Force tools | Out-Null
+          Copy-Item (Get-Command ffmpeg.exe).Source tools/ffmpeg.exe
+          Invoke-WebRequest -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile tools/cloudflared.exe
+      - name: Check source
+        run: python -m compileall -q voice_reader
+      - name: Build EXE
+        run: pyinstaller --noconfirm --clean build.spec
+      - name: Confirm output
+        shell: pwsh
+        run: |
+          if (!(Test-Path dist/VoiceReaderPro.exe)) { throw 'EXE was not generated' }
+          if ((Get-Item dist/VoiceReaderPro.exe).Length -lt 10MB) { throw 'EXE is unexpectedly small' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VoiceReaderPro-Windows
+          path: dist/VoiceReaderPro.exe
+          if-no-files-found: error
+          retention-days: 14
