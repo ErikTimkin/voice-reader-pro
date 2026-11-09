@@ -213,11 +213,15 @@ def download_armenian_reference(root: Path, ffmpeg: Path) -> None:
 
 def prepare_armenian(root: Path, ffmpeg: Path) -> None:
     target = root / "armenian"
-    print("Downloading the Armenian/Russian/English Pocket TTS fine-tune…", flush=True)
+    revision = HfApi().model_info(ARMENIAN_MODEL).sha
+    print(
+        f"Downloading pinned Armenian/Russian/English Pocket TTS fine-tune {revision}…",
+        flush=True,
+    )
     snapshot_download(
         repo_id=ARMENIAN_MODEL,
         repo_type="model",
-        revision="main",
+        revision=revision,
         local_dir=str(target),
         allow_patterns=[
             "tri_v1/model.safetensors",
