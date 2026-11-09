@@ -1,11 +1,14 @@
 # PyInstaller one-file Windows build. The workflow supplies tools/*.exe.
-# Collect both DAVE's native Rust extension and discord.py's bundled libopus DLL.
+# The local Silero model remains beside the EXE in voices/v5_6_ru.pt.
+# Collect DAVE, discord.py/libopus, PyTorch and NumPy native libraries.
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
 root = Path(SPECPATH)
 davey_datas, davey_binaries, davey_hiddenimports = collect_all("davey")
 discord_datas, discord_binaries, discord_hiddenimports = collect_all("discord")
+torch_datas, torch_binaries, torch_hiddenimports = collect_all("torch")
+numpy_datas, numpy_binaries, numpy_hiddenimports = collect_all("numpy")
 
 a = Analysis(
     [str(root / "voice_reader" / "app.py")],
@@ -13,16 +16,19 @@ a = Analysis(
     binaries=[
         (str(root / "tools" / "ffmpeg.exe"), "."),
         (str(root / "tools" / "cloudflared.exe"), "."),
-    ] + davey_binaries + discord_binaries,
+    ] + davey_binaries + discord_binaries + torch_binaries + numpy_binaries,
     datas=[
         (str(root / "voice_reader" / "static"), "voice_reader/static"),
-    ] + davey_datas + discord_datas,
+    ] + davey_datas + discord_datas + torch_datas + numpy_datas,
     hiddenimports=[
         "discord.opus",
         "discord.voice_client",
-    ] + davey_hiddenimports + discord_hiddenimports,
+        "torch.package",
+        "torch._C",
+        "numpy",
+    ] + davey_hiddenimports + discord_hiddenimports + torch_hiddenimports + numpy_hiddenimports,
     hookspath=[],
-    excludes=[],
+    excludes=["torch.distributed", "torch.testing", "torch.utils.tensorboard"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
