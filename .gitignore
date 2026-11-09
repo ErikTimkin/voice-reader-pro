@@ -5,3 +5,4 @@ dist/
 config.json
 .pytest_cache/
 # Windows build is produced by GitHub Actions.
+# Retry after a GitHub Actions service error.
