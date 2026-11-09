@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import re
 import tempfile
@@ -25,6 +26,27 @@ class VoiceService:
         self.voice_client = None
         self.ready = asyncio.Event()
         self.visitors = defaultdict(deque)
+
+        # Forward voice/gateway diagnostics into the GUI journal.
+        class UILogHandler(logging.Handler):
+            def __init__(self, callback):
+                super().__init__(logging.DEBUG)
+                self.callback = callback
+
+            def emit(self, record):
+                try:
+                    self.callback(f'[{record.name} {record.levelname}] {self.format(record)}')
+                except Exception:
+                    self.handleError(record)
+
+        self._discord_log_handler = UILogHandler(logger)
+        self._discord_log_handler.setFormatter(logging.Formatter('%(message)s'))
+        for logger_name in ('discord.voice_state', 'discord.voice_client', 'discord.gateway', 'discord.player', 'davey'):
+            component_logger = logging.getLogger(logger_name)
+            component_logger.setLevel(logging.DEBUG)
+            component_logger.addHandler(self._discord_log_handler)
+            component_logger.propagate = False
+
         self.client.event(self.on_ready)
         self.client.event(self.on_voice_state_update)
         self.client.event(self.on_disconnect)
@@ -79,9 +101,14 @@ class VoiceService:
             return
         before_name = before.channel.name if before.channel else 'вне канала'
         after_name = after.channel.name if after.channel else 'вне канала'
-        self.log(f'Discord изменил голосовое состояние бота: {before_name} → {after_name}.')
+        self.log(
+            f'Discord voice-state update: {before_name} → {after_name}; '
+            f'self_mute={after.self_mute}, self_deaf={after.self_deaf}, '
+            f'server_mute={after.mute}, server_deaf={after.deaf}.'
+        )
         if after.channel is None:
             self.ready.clear()
+            self.log('Discord прислал событие выхода бота из канала. Причину ищите в сообщениях [discord.voice_state] выше.')
         elif after.channel.id == self.channel_id:
             self.ready.set()
 
@@ -191,18 +218,44 @@ class VoiceService:
                     continue
                 fd, file_name = tempfile.mkstemp(suffix='.mp3')
                 os.close(fd)
+                self.log(f'Готовлю озвучивание: {len(text)} символ(ов), голос {self.voice}.')
                 await edge_tts.Communicate(text, self.voice).save(file_name)
+                file_size = Path(file_name).stat().st_size
+                self.log(f'Edge TTS создал аудиофайл: {file_size} байт.')
+                if not self.voice_client or not self.voice_client.is_connected():
+                    self.ready.clear()
+                    self.log('Голосовое соединение оборвалось до запуска FFmpeg.')
+                    continue
+
                 done = asyncio.get_running_loop().create_future()
                 loop = asyncio.get_running_loop()
-                self.voice_client.play(
-                    discord.FFmpegOpusAudio(file_name, executable=self.ffmpeg),
-                    after=lambda err: loop.call_soon_threadsafe(
-                        lambda: (not done.done()) and done.set_result(err)
-                    )
+
+                def playback_finished(error):
+                    def finish_on_loop():
+                        if error:
+                            self.log(f'FFmpeg/Discord playback callback: {type(error).__name__}: {error!r}')
+                        else:
+                            self.log('FFmpeg закончил передачу аудио без ошибки.')
+                        if not done.done():
+                            done.set_result(error)
+                    try:
+                        loop.call_soon_threadsafe(finish_on_loop)
+                    except RuntimeError:
+                        pass
+
+                self.log('Запускаю FFmpegOpusAudio и передачу аудио в Discord.')
+                source = discord.FFmpegOpusAudio(
+                    file_name,
+                    executable=self.ffmpeg,
+                    before_options='-nostdin',
                 )
+                self.voice_client.play(source, after=playback_finished)
                 err = await done
                 if err:
-                    self.log(f'Ошибка воспроизведения: {err}')
+                    self.log(f'Ошибка воспроизведения: {type(err).__name__}: {err!r}')
+                else:
+                    connected = self.voice_client.is_connected() if self.voice_client else False
+                    self.log(f'Передача аудио завершена. Голосовое соединение активно: {connected}.')
             except Exception as exc:
                 self.log(f'Ошибка озвучивания: {type(exc).__name__}: {exc}')
             finally:
