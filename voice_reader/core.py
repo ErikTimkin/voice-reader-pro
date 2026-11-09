@@ -1,5 +1,7 @@
 import asyncio
+import array
 import logging
+import math
 import os
 import re
 import tempfile
@@ -15,6 +17,48 @@ from edge_tts.exceptions import NoAudioReceived
 
 MAX_TEXT, MAX_QUEUE = 350, 20
 RATE_WINDOW, RATE_COUNT = 60, 5
+
+
+class DiagnosticFFmpegPCMAudio(discord.FFmpegPCMAudio):
+    """FFmpeg-to-PCM source that reports decoded frame count and signal level."""
+
+    def __init__(self, source, *, executable, logger, before_options=None, options=None):
+        self._voice_log = logger
+        self._pcm_frames = 0
+        self._pcm_bytes = 0
+        self._pcm_peak = 0
+        self._pcm_sum_squares = 0
+        self._pcm_sample_count = 0
+        self._pcm_summary_written = False
+        super().__init__(source, executable=executable, before_options=before_options, options=options)
+
+    def read(self):
+        data = super().read()
+        if data:
+            self._pcm_frames += 1
+            self._pcm_bytes += len(data)
+            samples = array.array('h')
+            samples.frombytes(data)
+            if samples:
+                self._pcm_peak = max(self._pcm_peak, max(abs(v) for v in samples))
+                self._pcm_sum_squares += sum(v * v for v in samples)
+                self._pcm_sample_count += len(samples)
+            return data
+
+        if not self._pcm_summary_written:
+            self._pcm_summary_written = True
+            rms = math.sqrt(self._pcm_sum_squares / self._pcm_sample_count) if self._pcm_sample_count else 0.0
+            self._voice_log(
+                f'PCM от FFmpeg: кадров={self._pcm_frames}, длительность={self._pcm_frames * 0.02:.2f} сек, '
+                f'байт={self._pcm_bytes}, RMS={rms:.1f}, peak={self._pcm_peak}.'
+            )
+            if self._pcm_frames == 0:
+                self._voice_log('ОШИБКА: FFmpeg не выдал ни одного PCM-кадра.')
+            elif self._pcm_peak == 0:
+                self._voice_log('ОШИБКА: декодированное аудио полностью цифрово-бесшумное.')
+            elif rms < 80:
+                self._voice_log('ПРЕДУПРЕЖДЕНИЕ: уровень PCM очень низкий; возможна почти полная тишина.')
+        return data
 
 class VoiceService:
     def __init__(self, token, guild_id, channel_id, voice, ffmpeg, logger):
@@ -290,19 +334,67 @@ class VoiceService:
                     except RuntimeError:
                         pass
 
-                self.log('Запускаю FFmpegOpusAudio и передачу аудио в Discord.')
-                source = discord.FFmpegOpusAudio(
+                voice_client = self.voice_client
+                connection_state = voice_client._connection
+                dave_session = getattr(connection_state, 'dave_session', None)
+                self.log(
+                    'Голосовой тракт перед запуском: '
+                    f'connected={voice_client.is_connected()}, mode={voice_client.mode}, '
+                    f'DAVE_session={dave_session is not None}, '
+                    f'DAVE_can_encrypt={getattr(connection_state, "can_encrypt", None)}, '
+                    f'Opus_loaded_before_play={discord.opus.is_loaded()}.'
+                )
+
+                # Use the normal discord.py PCM path; discord.py performs Opus encoding itself.
+                self.log('Запускаю FFmpegPCMAudio: PCM → встроенный Opus-кодер Discord.')
+                source = DiagnosticFFmpegPCMAudio(
                     file_name,
                     executable=self.ffmpeg,
+                    logger=self.log,
                     before_options='-nostdin',
+                    options='-af volume=1.5',
                 )
-                self.voice_client.play(source, after=playback_finished)
+
+                packet_stats = {'count': 0, 'bytes': 0}
+                original_send_audio_packet = voice_client.send_audio_packet
+
+                def counted_send_audio_packet(data, *, encode=True):
+                    original_send_audio_packet(data, encode=encode)
+                    packet_stats['count'] += 1
+                    packet_stats['bytes'] += len(data)
+
+                voice_client.send_audio_packet = counted_send_audio_packet
+
+                def playback_finished(error):
+                    def finish_on_loop():
+                        voice_client.send_audio_packet = original_send_audio_packet
+                        self.log(
+                            f'Пакеты в Discord: {packet_stats["count"]}, '
+                            f'исходных байт PCM: {packet_stats["bytes"]}.'
+                        )
+                        if error:
+                            self.log(f'FFmpeg/Discord callback: {type(error).__name__}: {error!r}')
+                        else:
+                            self.log(
+                                f'Воспроизведение завершилось без исключения. '
+                                f'Голосовое соединение активно: {voice_client.is_connected()}; '
+                                f'Opus_loaded={discord.opus.is_loaded()}.'
+                            )
+                        if not done.done():
+                            done.set_result(error)
+                    try:
+                        loop.call_soon_threadsafe(finish_on_loop)
+                    except RuntimeError:
+                        pass
+
+                try:
+                    voice_client.play(source, after=playback_finished, signal_type='voice')
+                except Exception:
+                    voice_client.send_audio_packet = original_send_audio_packet
+                    raise
                 err = await done
                 if err:
                     self.log(f'Ошибка воспроизведения: {type(err).__name__}: {err!r}')
-                else:
-                    connected = self.voice_client.is_connected() if self.voice_client else False
-                    self.log(f'Передача аудио завершена. Голосовое соединение активно: {connected}.')
             except Exception as exc:
                 self.log(f'Ошибка озвучивания: {type(exc).__name__}: {exc}')
             finally:
