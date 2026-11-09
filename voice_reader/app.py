@@ -9,8 +9,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 import keyring
-from voice_reader.core import (
-    VoiceService,
+from voice_reader.core import VoiceService
+from voice_reader.local_tts import (
     VOICE_PRESETS,
     VOICE_PRESET_LABELS,
     VOICE_LABEL_TO_PRESET,
@@ -19,6 +19,8 @@ from voice_reader.core import (
 
 APP_NAME, TOKEN_KEY = 'Voice Reader Pro', 'discord-token'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
+APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[1]
+VOICE_MODEL = APP_DIR / 'voices' / 'v5_6_ru.pt'
 DATA = Path(os.getenv('APPDATA', Path.home())) / 'VoiceReaderPro'
 CONFIG = DATA / 'config.json'
 
@@ -53,9 +55,9 @@ class App:
                     values=list(VOICE_PRESET_LABELS.values()),
                     state='readonly',
                 )
-                configured_voice = cfg.get('voice', 'dmitry')
+                configured_voice = cfg.get('voice', 'normal')
                 preset_key = LEGACY_VOICE_IDS.get(configured_voice, configured_voice)
-                e.set(VOICE_PRESET_LABELS.get(preset_key, VOICE_PRESETS['dmitry']['label']))
+                e.set(VOICE_PRESET_LABELS.get(preset_key, VOICE_PRESETS['normal']['label']))
             else:
                 e = ttk.Entry(box, show=show)
                 e.insert(0, cfg.get(key, ''))
@@ -101,7 +103,7 @@ class App:
             for k in ('guild_id', 'channel_id')
         }
         selected_label = self.fields['voice'].get().strip()
-        settings['voice'] = VOICE_LABEL_TO_PRESET.get(selected_label, 'dmitry')
+        settings['voice'] = VOICE_LABEL_TO_PRESET.get(selected_label, 'normal')
         CONFIG.write_text(json.dumps(settings, ensure_ascii=False, indent=2), 'utf-8')
         keyring.set_password(APP_NAME, TOKEN_KEY, self.fields['token'].get().strip())
 
@@ -139,6 +141,11 @@ class App:
         ffmpeg, cloudflared = tool('ffmpeg'), tool('cloudflared')
         if not ffmpeg or not cloudflared:
             return messagebox.showerror(APP_NAME, 'Не найдены встроенные FFmpeg или cloudflared.')
+        if not VOICE_MODEL.is_file():
+            return messagebox.showerror(
+                APP_NAME,
+                'Не найдена локальная модель голосов. Распакуйте ZIP целиком: рядом с VoiceReaderPro.exe должна быть папка voices.',
+            )
         try:
             self.save()
         except Exception as e:
@@ -147,7 +154,7 @@ class App:
         self.stop.configure(state='normal')
         self.status.set('Запуск…')
         selected_voice_label = self.fields['voice'].get().strip()
-        voice_preset = VOICE_LABEL_TO_PRESET.get(selected_voice_label, 'dmitry')
+        voice_preset = VOICE_LABEL_TO_PRESET.get(selected_voice_label, 'normal')
         self.thread = threading.Thread(target=self.run,
             args=(token, guild, channel, voice_preset, ffmpeg, cloudflared), daemon=True)
         self.thread.start()
@@ -159,7 +166,7 @@ class App:
 
     async def run_async(self, token, guild, channel, voice, ffmpeg, cloudflared):
         try:
-            self.service = VoiceService(token, guild, channel, voice, ffmpeg, self.emit)
+            self.service = VoiceService(token, guild, channel, voice, ffmpeg, self.emit, VOICE_MODEL)
             await self.service.start()
             p = await asyncio.create_subprocess_exec(cloudflared, 'tunnel', '--url',
                 'http://127.0.0.1:8765', '--no-autoupdate',
