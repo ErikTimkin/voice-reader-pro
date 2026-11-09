@@ -23,10 +23,13 @@ def main() -> None:
         'data-voice="normal"',
         'data-voice="cute_girl"',
         'Пудж из Dota 2',
-        "event.key==='Enter'",
+        "event.key === 'Enter'",
         "!event.shiftKey",
-        "JSON.stringify({text:text,voice:selectedVoice})",
-        "radial-gradient",
+        "JSON.stringify({text: text, voice: voice})",
+        "-apple-system",
+        "--page: #f5f5f7",
+        "pendingRequests",
+        "Отправить",
     ]
     for fragment in required:
         if fragment not in page:
@@ -37,7 +40,15 @@ def main() -> None:
         if fragment not in app:
             raise AssertionError(f"Desktop dark theme is missing: {fragment}")
 
-    print("Web voice selection, Enter/Shift+Enter, Pudge honesty and desktop dark theme passed.")
+    core = (ROOT / "voice_reader" / "core.py").read_text(encoding="utf-8")
+    if "RATE_WINDOW" in core or "RATE_COUNT" in core or "def allowed(" in core:
+        raise AssertionError("Server-side per-minute request throttling is still enabled")
+    if "self.queue = asyncio.Queue()" not in core:
+        raise AssertionError("The message queue must not have a small fixed capacity")
+    if "self.queue.full()" in core:
+        raise AssertionError("Requests should not be rejected because the old queue capacity was reached")
+
+    print("Apple-style web UI, Enter/Shift+Enter, concurrent sends, and no rate limit passed.")
 
 
 if __name__ == "__main__":
