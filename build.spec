@@ -16,6 +16,9 @@ sentencepiece_datas, sentencepiece_binaries, sentencepiece_hiddenimports = colle
 yaml_datas, yaml_binaries, yaml_hiddenimports = collect_all("yaml")
 scipy_datas, scipy_binaries, scipy_hiddenimports = collect_all("scipy")
 safetensors_datas, safetensors_binaries, safetensors_hiddenimports = collect_all("safetensors")
+tokenizers_datas, tokenizers_binaries, tokenizers_hiddenimports = collect_all("tokenizers")
+huggingface_datas, huggingface_binaries, huggingface_hiddenimports = collect_all("huggingface_hub")
+pydantic_datas, pydantic_binaries, pydantic_hiddenimports = collect_all("pydantic")
 
 a = Analysis(
     [str(root / "voice_reader" / "app.py")],
