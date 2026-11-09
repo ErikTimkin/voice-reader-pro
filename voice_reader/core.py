@@ -12,6 +12,7 @@ import aiohttp
 from aiohttp import web
 import discord
 from voice_reader.local_tts import LocalSileroTTS, VOICE_PRESETS, resolve_voice_profile
+from voice_reader.additional_tts import ArmenianAccentTTS, TeraPopTTS
 from voice_reader.number_normalizer import normalize_numbers_for_speech
 
 MAX_TEXT = 350
@@ -81,6 +82,9 @@ class VoiceService:
         self.guild_id, self.channel_id = int(guild_id), int(channel_id)
         self.voice, self.ffmpeg, self.log = voice, str(ffmpeg), logger
         self.local_tts = LocalSileroTTS(tts_model_path, logger)
+        voice_assets = Path(tts_model_path).parent
+        self.armenian_tts = ArmenianAccentTTS(voice_assets / "armenian", logger)
+        self.pop_tts = TeraPopTTS(voice_assets / "teratts", logger)
         self.tts_ready = asyncio.Event()
         self.tts_error = None
         # Unbounded FIFO: users can submit repeatedly without per-minute throttling.
@@ -205,7 +209,10 @@ class VoiceService:
             # CPU-heavy model loading and warm-up must not block Discord heartbeats.
             await asyncio.to_thread(self.local_tts.load)
             elapsed = (time.perf_counter() - started) * 1000
-            self.log(f'Локальная модель Silero готова за {elapsed:.0f} мс. Все три голоса работают без Microsoft TTS.')
+            self.log(
+                f'Локальная модель Silero готова за {elapsed:.0f} мс. '
+                'Армянский и поп-голос загрузятся отдельно при первом выборе.'
+            )
         except Exception as exc:
             self.tts_error = f'{type(exc).__name__}: {exc}'
             self.log(f'Не удалось загрузить локальную модель голоса: {self.tts_error}')
@@ -333,9 +340,10 @@ class VoiceService:
 
                 profile = resolve_voice_profile(selected_voice)
                 speech_text = normalize_numbers_for_speech(text)
+                engine = profile.get("engine", "silero")
                 self.log(
                     f'Локальная озвучка: {profile["label"]}; '
-                    f'диктор Silero={profile["speaker"]}; выбор сайта={selected_voice}.'
+                    f'движок={engine}; диктор={profile.get("speaker", selected_voice)}.'
                 )
                 if speech_text != text:
                     self.log(f'Числа преобразованы в слова перед озвучкой: {speech_text[:180]}')
@@ -344,14 +352,29 @@ class VoiceService:
                 os.close(fd)
                 synth_started = time.perf_counter()
 
-                # Silero inference is CPU-heavy. Run it outside the asyncio loop
-                # so Discord gateway and voice heartbeats remain responsive.
-                audio_bytes, audio_duration = await asyncio.to_thread(
-                    self.local_tts.synthesize_to_wav,
-                    speech_text,
-                    profile["speaker"],
-                    file_name,
-                )
+                # All neural inference runs outside the asyncio loop so Discord
+                # gateway and voice heartbeats remain responsive.
+                if engine == "silero":
+                    audio_bytes, audio_duration = await asyncio.to_thread(
+                        self.local_tts.synthesize_to_wav,
+                        speech_text,
+                        profile["speaker"],
+                        file_name,
+                    )
+                elif engine == "armenian":
+                    audio_bytes, audio_duration = await asyncio.to_thread(
+                        self.armenian_tts.synthesize_to_wav,
+                        speech_text,
+                        file_name,
+                    )
+                elif engine == "teratts":
+                    audio_bytes, audio_duration = await asyncio.to_thread(
+                        self.pop_tts.synthesize_to_wav,
+                        speech_text,
+                        file_name,
+                    )
+                else:
+                    raise RuntimeError(f"Неизвестный движок озвучивания: {engine}")
                 synth_ms = (time.perf_counter() - synth_started) * 1000
                 self.log(
                     f'Локальная модель создала звук за {synth_ms:.0f} мс: '
