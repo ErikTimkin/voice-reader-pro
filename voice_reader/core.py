@@ -31,8 +31,20 @@ class VoiceService:
     async def start(self):
         app = web.Application(client_max_size=2048); app.router.add_get('/', self.index); app.router.add_post('/api/speak', self.speak)
         self.runner = web.AppRunner(app); await self.runner.setup(); self.site = web.TCPSite(self.runner, '127.0.0.1', 8765); await self.site.start()
-        self.worker = asyncio.create_task(self.play_worker())\n        self.discord_task = asyncio.create_task(self.client.start(self.token))\n        self.discord_task.add_done_callback(self._discord_finished)\n        self.log('Веб-сервер запущен. Подключаем бота…')
-    def _discord_finished(self, task):\n        """Show a background Discord failure in the GUI journal."""\n        if task.cancelled(): return\n        try:\n            task.result()\n        except discord.LoginFailure:\n            self.log('Discord отклонил токен бота. Скопируйте Bot Token заново в Developer Portal → Bot.')\n        except Exception as exc:\n            self.log(f'Не удалось подключить бота к Discord: {exc}')\n    async def index(self, request): return web.FileResponse(Path(__file__).parent / 'static' / 'index.html')
+        self.worker = asyncio.create_task(self.play_worker())
+        self.discord_task = asyncio.create_task(self.client.start(self.token))
+        self.discord_task.add_done_callback(self._discord_finished)
+        self.log('Веб-сервер запущен. Подключаем бота…')
+    def _discord_finished(self, task):
+        """Show a background Discord failure in the GUI journal."""
+        if task.cancelled(): return
+        try:
+            task.result()
+        except discord.LoginFailure:
+            self.log('Discord отклонил токен бота. Скопируйте Bot Token заново в Developer Portal → Bot.')
+        except Exception as exc:
+            self.log(f'Не удалось подключить бота к Discord: {exc}')
+    async def index(self, request): return web.FileResponse(Path(__file__).parent / 'static' / 'index.html')
     def allowed(self, request):
         ip = request.remote or 'unknown'; now = time.monotonic(); bucket = self.visitors[ip]
         while bucket and now - bucket[0] > RATE_WINDOW: bucket.popleft()
@@ -64,7 +76,8 @@ class VoiceService:
                 if file_name: Path(file_name).unlink(missing_ok=True)
                 self.queue.task_done()
     async def stop(self):
-        if self.worker: self.worker.cancel()\n        if self.discord_task and not self.discord_task.done(): self.discord_task.cancel()
+        if self.worker: self.worker.cancel()
+        if self.discord_task and not self.discord_task.done(): self.discord_task.cancel()
         if self.voice_client and self.voice_client.is_playing(): self.voice_client.stop()
         if not self.client.is_closed(): await self.client.close()
         if self.runner: await self.runner.cleanup()
