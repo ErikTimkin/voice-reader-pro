@@ -21,6 +21,10 @@ def tool(name):
 class App:
     def __init__(self, root):
         self.root=root; root.title(APP_NAME); root.geometry('650x540'); self.events=queue.Queue(); self.thread=self.loop=self.service=None
+        # Explicitly support Ctrl+V even with a non-English keyboard layout.
+        root.bind_all('<Control-v>', self.paste_from_clipboard)
+        root.bind_all('<Control-V>', self.paste_from_clipboard)
+        root.bind_all('<Control-KeyPress>', self.handle_control_key)
         DATA.mkdir(parents=True, exist_ok=True); cfg=self.load(); box=ttk.Frame(root,padding=16); box.pack(fill='both',expand=True); self.fields={}
         for label,key,show in [('Токен Discord-бота','token','•'),('ID сервера','guild_id',''),('ID голосового канала','channel_id',''),('Голос Edge TTS','voice','')]:
             ttk.Label(box,text=label).pack(anchor='w'); e=ttk.Entry(box,show=show); e.pack(fill='x',pady=(0,8)); e.insert(0,cfg.get(key,'')); self.fields[key]=e
@@ -77,5 +81,19 @@ class App:
             asyncio.run_coroutine_threadsafe(self.service.stop(),self.loop)
         self.start.configure(state='normal'); self.stop.configure(state='disabled'); self.status.set('Остановлено')
     def copy(self): self.root.clipboard_clear(); self.root.clipboard_append(self.link.get())
+    def paste_from_clipboard(self, event=None):
+        \"\"\"Paste into the focused entry/text widget and suppress Tk's duplicate paste.\"\"\"
+        widget = self.root.focus_get()
+        if not isinstance(widget, (tk.Entry, tk.Text, ttk.Entry)):
+            return
+        try:
+            widget.insert('insert', self.root.clipboard_get())
+        except tk.TclError:
+            pass
+        return 'break'
+    def handle_control_key(self, event):
+        # Windows virtual-key 86 is the physical V key, including Russian layout.
+        if event.state & 0x4 and event.keycode == 86:
+            return self.paste_from_clipboard(event)
     def close(self): self.stop_service(); self.root.destroy()
 if __name__=='__main__': App(tk.Tk()).root.mainloop()
