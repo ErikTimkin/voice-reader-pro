@@ -26,26 +26,71 @@ class VoiceService:
         self.ready = asyncio.Event()
         self.visitors = defaultdict(deque)
         self.client.event(self.on_ready)
+        self.client.event(self.on_voice_state_update)
+        self.client.event(self.on_disconnect)
+        self.client.event(self.on_resumed)
 
     async def on_ready(self):
-        guild = self.client.get_guild(self.guild_id)
-        if guild is None:
-            self.log('Бот вошёл в Discord, но не видит сервер. Проверьте ID сервера и приглашение бота.')
+        # on_ready may fire again after a Discord gateway reconnect.
+        # Serialize attempts and reuse a healthy existing voice connection.
+        if not hasattr(self, '_voice_connect_lock'):
+            self._voice_connect_lock = asyncio.Lock()
+        async with self._voice_connect_lock:
+            guild = self.client.get_guild(self.guild_id)
+            if guild is None:
+                self.ready.clear()
+                self.log('Discord авторизовал бота, но нужный сервер не найден в кеше. Проверьте ID сервера и приглашение.')
+                return
+            channel = guild.get_channel(self.channel_id)
+            if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
+                self.ready.clear()
+                self.log('Сервер найден, но указанный ID не является доступным голосовым каналом.')
+                return
+            try:
+                current = guild.voice_client
+                if current and current.is_connected():
+                    if current.channel and current.channel.id != channel.id:
+                        self.log(f'Бот уже в канале «{current.channel.name}», перемещаю в «{channel.name}».')
+                        await current.move_to(channel)
+                    self.voice_client = current
+                    self.ready.set()
+                    self.log(f'Голосовое соединение активно: «{channel.name}».')
+                    return
+                if current:
+                    self.log('Обнаружено старое отключённое голосовое соединение. Очищаю его перед повторным входом.')
+                    try:
+                        await current.disconnect(force=True)
+                    except Exception as cleanup_error:
+                        self.log(f'Не удалось очистить старое соединение: {cleanup_error}')
+                self.ready.clear()
+                self.log(f'Пробую подключиться к голосовому каналу «{channel.name}»…')
+                self.voice_client = await channel.connect(reconnect=True, timeout=30)
+                if not self.voice_client.is_connected():
+                    raise RuntimeError('Discord создал голосовой клиент, но соединение не установлено.')
+                self.ready.set()
+                self.log(f'Бот успешно подключился к голосовому каналу «{channel.name}».')
+            except Exception as exc:
+                self.ready.clear()
+                self.log(f'Ошибка голосового подключения: {type(exc).__name__}: {exc}')
+                self.voice_client = guild.voice_client
+
+    async def on_voice_state_update(self, member, before, after):
+        if self.client.user is None or member.id != self.client.user.id:
             return
-        channel = guild.get_channel(self.channel_id)
-        if not isinstance(channel, (discord.VoiceChannel, discord.StageChannel)):
-            self.log('Сервер найден, но голосовой канал не найден или бот не имеет к нему доступа.')
-            return
-        try:
-            self.voice_client = guild.voice_client
-            if self.voice_client and self.voice_client.channel != channel:
-                await self.voice_client.move_to(channel)
-            elif not self.voice_client:
-                self.voice_client = await channel.connect(reconnect=True, timeout=20)
+        before_name = before.channel.name if before.channel else 'вне канала'
+        after_name = after.channel.name if after.channel else 'вне канала'
+        self.log(f'Discord изменил голосовое состояние бота: {before_name} → {after_name}.')
+        if after.channel is None:
+            self.ready.clear()
+        elif after.channel.id == self.channel_id:
             self.ready.set()
-            self.log(f'Бот подключён к каналу «{channel.name}».')
-        except Exception as exc:
-            self.log(f'Не удалось войти в голосовой канал: {type(exc).__name__}: {exc}')
+
+    async def on_disconnect(self):
+        self.ready.clear()
+        self.log('Потеряно соединение бота с Discord Gateway. Клиент пытается восстановить связь…')
+
+    async def on_resumed(self):
+        self.log('Соединение с Discord Gateway восстановлено.')
 
     async def start(self):
         app = web.Application(client_max_size=2048)
