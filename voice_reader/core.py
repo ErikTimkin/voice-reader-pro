@@ -3,8 +3,8 @@ import array
 import logging
 import math
 import os
+import queue as thread_queue
 import re
-import tempfile
 import time
 from collections import defaultdict, deque
 from pathlib import Path
@@ -22,7 +22,7 @@ RATE_WINDOW, RATE_COUNT = 60, 5
 class DiagnosticFFmpegPCMAudio(discord.FFmpegPCMAudio):
     """FFmpeg-to-PCM source that reports decoded frame count and signal level."""
 
-    def __init__(self, source, *, executable, logger, before_options=None, options=None):
+    def __init__(self, source, *, executable, logger, pipe=False, before_options=None, options=None):
         self._voice_log = logger
         self._pcm_frames = 0
         self._pcm_bytes = 0
@@ -30,7 +30,13 @@ class DiagnosticFFmpegPCMAudio(discord.FFmpegPCMAudio):
         self._pcm_sum_squares = 0
         self._pcm_sample_count = 0
         self._pcm_summary_written = False
-        super().__init__(source, executable=executable, before_options=before_options, options=options)
+        super().__init__(
+            source,
+            executable=executable,
+            pipe=pipe,
+            before_options=before_options,
+            options=options,
+        )
 
     def read(self):
         data = super().read()
@@ -59,6 +65,39 @@ class DiagnosticFFmpegPCMAudio(discord.FFmpegPCMAudio):
             elif rms < 80:
                 self._voice_log('ПРЕДУПРЕЖДЕНИЕ: уровень PCM очень низкий; возможна почти полная тишина.')
         return data
+
+class BlockingMP3Stream:
+    """File-like blocking reader fed by Edge TTS async audio chunks."""
+
+    def __init__(self):
+        self._chunks = thread_queue.Queue()
+        self._buffer = bytearray()
+        self._finished = False
+
+    def feed(self, data: bytes) -> None:
+        if data:
+            self._chunks.put(data)
+
+    def finish(self) -> None:
+        self._chunks.put(None)
+
+    def read(self, size: int = -1) -> bytes:
+        if size is None or size < 0:
+            size = 8192
+        while len(self._buffer) < size and not self._finished:
+            chunk = self._chunks.get()
+            if chunk is None:
+                self._finished = True
+                break
+            self._buffer.extend(chunk)
+
+        if not self._buffer:
+            return b''
+        count = min(size, len(self._buffer))
+        data = bytes(self._buffer[:count])
+        del self._buffer[:count]
+        return data
+
 
 class VoiceService:
     def __init__(self, token, guild_id, channel_id, voice, ffmpeg, logger):
@@ -235,6 +274,7 @@ class VoiceService:
         return True
 
     async def speak(self, request):
+        request_started = time.perf_counter()
         if not self.ready.is_set():
             return web.json_response({'message': 'Бот ещё не подключён к голосовому каналу.'}, status=503)
         if not self.allowed(request):
@@ -249,24 +289,42 @@ class VoiceService:
             return web.json_response({'message': 'Введите от 1 до 350 символов.'}, status=400)
         if self.queue.full():
             return web.json_response({'message': 'Очередь заполнена. Попробуйте позже.'}, status=429)
-        await self.queue.put(text)
-        return web.json_response({'message': f'Добавлено в очередь: {self.queue.qsize()}.'})
+
+        enqueued_at = time.perf_counter()
+        await self.queue.put((text, enqueued_at))
+        queue_size = self.queue.qsize()
+        elapsed_ms = (time.perf_counter() - request_started) * 1000
+        self.log(
+            f'Сайт → очередь: принято за {elapsed_ms:.0f} мс; '
+            f'символов={len(text)}, сообщений впереди={max(0, queue_size - 1)}.'
+        )
+        return web.json_response({
+            'message': 'Принято. Начинаю озвучивание.' if queue_size == 1
+            else f'Добавлено в очередь: {queue_size}.'
+        })
 
     async def play_worker(self):
         while True:
-            text = await self.queue.get()
-            file_name = None
+            item = await self.queue.get()
+            if isinstance(item, tuple):
+                text, enqueued_at = item
+            else:
+                text, enqueued_at = item, time.perf_counter()
+
+            audio_stream = None
+            playback_done = None
+            voice_client = None
+            original_send_audio_packet = None
+            playback_started = False
+
             try:
+                queue_wait_ms = (time.perf_counter() - enqueued_at) * 1000
+                self.log(f'Начинаю сообщение: очередь ожидала {queue_wait_ms:.0f} мс.')
                 if not self.voice_client or not self.voice_client.is_connected():
                     self.ready.clear()
                     self.log('Голосовое соединение потеряно. Новые сообщения временно не принимаются.')
                     continue
-                fd, file_name = tempfile.mkstemp(suffix='.mp3')
-                os.close(fd)
-                self.log(f'Готовлю озвучивание: {len(text)} символ(ов), основной голос {self.voice}.')
 
-                # Microsoft Edge TTS can intermittently close a successful WebSocket
-                # without returning any audio. Retry and fall back to another Russian voice.
                 voices_to_try = [self.voice]
                 fallback_voice = "ru-RU-SvetlanaNeural"
                 if fallback_voice != self.voice:
@@ -274,138 +332,185 @@ class VoiceService:
 
                 synthesized = False
                 last_tts_error = None
+
                 for voice_index, candidate_voice in enumerate(voices_to_try):
                     for attempt in range(1, 3):
+                        audio_stream = None
+                        playback_done = None
+                        playback_started = False
+                        voice_client = None
+                        original_send_audio_packet = None
+                        tts_started = time.perf_counter()
+
                         try:
                             if voice_index == 0 and attempt == 1:
-                                self.log(f'Запрашиваю озвучивание голосом {candidate_voice}.')
+                                self.log(f'Запрашиваю поток Edge TTS: {candidate_voice}.')
                             elif voice_index == 0:
-                                self.log(f'Edge TTS не прислал звук. Повторная попытка {attempt}/2 для {candidate_voice}…')
+                                self.log(f'Edge TTS не прислал аудио. Повторная попытка {attempt}/2…')
                             else:
                                 self.log(f'Пробую запасной русский голос {candidate_voice}…')
 
-                            await edge_tts.Communicate(text, candidate_voice).save(file_name)
-                            file_size = Path(file_name).stat().st_size
-                            if file_size < 256:
-                                raise NoAudioReceived(f'Edge TTS returned an unusually small audio file ({file_size} bytes).')
+                            communicate = edge_tts.Communicate(text, candidate_voice)
+                            audio_bytes = 0
 
-                            self.log(f'Edge TTS создал аудиофайл: {file_size} байт, голос {candidate_voice}.')
+                            async for chunk in communicate.stream():
+                                if chunk.get('type') != 'audio':
+                                    continue
+                                data = chunk.get('data') or b''
+                                if not data:
+                                    continue
+
+                                audio_bytes += len(data)
+                                if not playback_started:
+                                    if not self.voice_client or not self.voice_client.is_connected():
+                                        self.ready.clear()
+                                        raise RuntimeError('Discord voice connection was lost before first audio chunk')
+
+                                    audio_stream = BlockingMP3Stream()
+                                    audio_stream.feed(data)
+                                    playback_done = asyncio.get_running_loop().create_future()
+                                    loop = asyncio.get_running_loop()
+                                    voice_client = self.voice_client
+                                    connection_state = voice_client._connection
+                                    dave_session = getattr(connection_state, 'dave_session', None)
+                                    self.log(
+                                        'Голосовой тракт: '
+                                        f'connected={voice_client.is_connected()}, mode={voice_client.mode}, '
+                                        f'DAVE_protocol={getattr(connection_state, "dave_protocol_version", None)}, '
+                                        f'DAVE_session_ready={getattr(dave_session, "ready", None)}, '
+                                        f'DAVE_can_encrypt={getattr(connection_state, "can_encrypt", None)}, '
+                                        f'Opus_loaded={discord.opus.is_loaded()}.'
+                                    )
+
+                                    packet_stats = {'count': 0, 'bytes': 0}
+                                    original_send_audio_packet = voice_client.send_audio_packet
+
+                                    def counted_send_audio_packet(packet_data, *, encode=True):
+                                        original_send_audio_packet(packet_data, encode=encode)
+                                        packet_stats['count'] += 1
+                                        packet_stats['bytes'] += len(packet_data)
+
+                                    voice_client.send_audio_packet = counted_send_audio_packet
+
+                                    def playback_finished(error):
+                                        def finish_on_loop():
+                                            voice_client.send_audio_packet = original_send_audio_packet
+                                            self.log(
+                                                f'Пакеты Discord: {packet_stats["count"]}; '
+                                                f'передано данных PCM: {packet_stats["bytes"]} байт.'
+                                            )
+                                            if error:
+                                                self.log(f'Ошибка воспроизведения: {type(error).__name__}: {error!r}')
+                                            else:
+                                                self.log(
+                                                    f'Аудиопоток завершён. Discord подключён: '
+                                                    f'{voice_client.is_connected()}.'
+                                                )
+                                            if not playback_done.done():
+                                                playback_done.set_result(error)
+                                        try:
+                                            loop.call_soon_threadsafe(finish_on_loop)
+                                        except RuntimeError:
+                                            pass
+
+                                    source = DiagnosticFFmpegPCMAudio(
+                                        audio_stream,
+                                        executable=self.ffmpeg,
+                                        logger=self.log,
+                                        pipe=True,
+                                        before_options='-nostdin -f mp3',
+                                        options='-af volume=1.5',
+                                    )
+                                    try:
+                                        voice_client.play(source, after=playback_finished, signal_type='voice')
+                                    except Exception:
+                                        voice_client.send_audio_packet = original_send_audio_packet
+                                        original_send_audio_packet = None
+                                        raise
+
+                                    playback_started = True
+                                    first_audio_ms = (time.perf_counter() - tts_started) * 1000
+                                    self.log(
+                                        f'Первый аудиофрагмент получен за {first_audio_ms:.0f} мс; '
+                                        f'начинаю воспроизведение, {len(data)} байт в первом фрагменте.'
+                                    )
+                                else:
+                                    audio_stream.feed(data)
+
+                            if not playback_started:
+                                raise NoAudioReceived('Edge TTS finished without returning audio.')
+
+                            audio_stream.finish()
+                            total_tts_ms = (time.perf_counter() - tts_started) * 1000
+                            self.log(
+                                f'Edge TTS передал весь текст за {total_tts_ms:.0f} мс; '
+                                f'аудио={audio_bytes} байт, голос={candidate_voice}.'
+                            )
+                            playback_error = await playback_done
+                            if playback_error:
+                                self.log(
+                                    f'Ошибка передачи звука: {type(playback_error).__name__}: {playback_error!r}'
+                                )
                             synthesized = True
                             break
+
                         except NoAudioReceived as exc:
                             last_tts_error = exc
-                            self.log(f'Edge TTS не вернул аудио ({candidate_voice}, попытка {attempt}/2): {exc}')
+                            if playback_started and audio_stream is not None:
+                                audio_stream.finish()
+                                self.log(
+                                    f'Edge TTS оборвал поток после начала воспроизведения: {exc}. '
+                                    'Уже полученная часть будет доиграна.'
+                                )
+                                if playback_done is not None:
+                                    await playback_done
+                                synthesized = True
+                                break
+                            self.log(
+                                f'Edge TTS не вернул первый фрагмент ({candidate_voice}, '
+                                f'попытка {attempt}/2): {exc}'
+                            )
                             if attempt < 2:
-                                await asyncio.sleep(2.5 * attempt)
+                                await asyncio.sleep(0.8)
                         except Exception as exc:
                             last_tts_error = exc
-                            self.log(f'Ошибка Edge TTS ({candidate_voice}): {type(exc).__name__}: {exc}')
+                            if playback_started and audio_stream is not None:
+                                audio_stream.finish()
+                                self.log(
+                                    f'Поток озвучивания прервался после старта: '
+                                    f'{type(exc).__name__}: {exc}'
+                                )
+                                if playback_done is not None:
+                                    await playback_done
+                                synthesized = True
+                                break
+                            self.log(
+                                f'Ошибка Edge TTS ({candidate_voice}): {type(exc).__name__}: {exc}'
+                            )
                             if attempt < 2:
-                                await asyncio.sleep(2.5 * attempt)
+                                await asyncio.sleep(0.8)
                     if synthesized:
                         break
 
                 if not synthesized:
                     self.log(
-                        'Не удалось получить звук ни основным, ни запасным голосом. '
-                        f'Последняя ошибка: {type(last_tts_error).__name__ if last_tts_error else "Unknown"}: {last_tts_error}. '
-                        'Discord и FFmpeg здесь ещё не задействованы.'
+                        'Не удалось получить аудио ни основным, ни запасным голосом. '
+                        f'Последняя ошибка: {type(last_tts_error).__name__ if last_tts_error else "Unknown"}: '
+                        f'{last_tts_error}.'
                     )
-                    continue
 
-                if not self.voice_client or not self.voice_client.is_connected():
-                    self.ready.clear()
-                    self.log('Голосовое соединение оборвалось до запуска FFmpeg.')
-                    continue
-
-                done = asyncio.get_running_loop().create_future()
-                loop = asyncio.get_running_loop()
-
-                def playback_finished(error):
-                    def finish_on_loop():
-                        if error:
-                            self.log(f'FFmpeg/Discord playback callback: {type(error).__name__}: {error!r}')
-                        else:
-                            self.log('FFmpeg закончил передачу аудио без ошибки.')
-                        if not done.done():
-                            done.set_result(error)
-                    try:
-                        loop.call_soon_threadsafe(finish_on_loop)
-                    except RuntimeError:
-                        pass
-
-                voice_client = self.voice_client
-                connection_state = voice_client._connection
-                dave_session = getattr(connection_state, 'dave_session', None)
-                self.log(
-                    'Голосовой тракт перед запуском: '
-                    f'connected={voice_client.is_connected()}, mode={voice_client.mode}, '
-                    f'DAVE_session={dave_session is not None}, '
-                    f'DAVE_protocol_version={getattr(connection_state, "dave_protocol_version", None)}, '
-                    f'DAVE_downgraded={getattr(connection_state, "dave_downgraded", None)}, '
-                    f'DAVE_session_ready={getattr(dave_session, "ready", None)}, '
-                    f'DAVE_session_can_encrypt={getattr(dave_session, "can_encrypt", None)}, '
-                    f'DAVE_connection_can_encrypt={getattr(connection_state, "can_encrypt", None)}, '
-                    f'DAVE_pending_transitions={getattr(connection_state, "dave_pending_transitions", None)}, '
-                    f'Connected_user_ids={len(getattr(connection_state, "connected_user_ids", ()))}, '
-                    f'Opus_loaded_before_play={discord.opus.is_loaded()}.'
-                )
-
-                # Use the normal discord.py PCM path; discord.py performs Opus encoding itself.
-                self.log('Запускаю FFmpegPCMAudio: PCM → встроенный Opus-кодер Discord.')
-                source = DiagnosticFFmpegPCMAudio(
-                    file_name,
-                    executable=self.ffmpeg,
-                    logger=self.log,
-                    before_options='-nostdin',
-                    options='-af volume=1.5',
-                )
-
-                packet_stats = {'count': 0, 'bytes': 0}
-                original_send_audio_packet = voice_client.send_audio_packet
-
-                def counted_send_audio_packet(data, *, encode=True):
-                    original_send_audio_packet(data, encode=encode)
-                    packet_stats['count'] += 1
-                    packet_stats['bytes'] += len(data)
-
-                voice_client.send_audio_packet = counted_send_audio_packet
-
-                def playback_finished(error):
-                    def finish_on_loop():
-                        voice_client.send_audio_packet = original_send_audio_packet
-                        self.log(
-                            f'Пакеты в Discord: {packet_stats["count"]}, '
-                            f'исходных байт PCM: {packet_stats["bytes"]}.'
-                        )
-                        if error:
-                            self.log(f'FFmpeg/Discord callback: {type(error).__name__}: {error!r}')
-                        else:
-                            self.log(
-                                f'Воспроизведение завершилось без исключения. '
-                                f'Голосовое соединение активно: {voice_client.is_connected()}; '
-                                f'Opus_loaded={discord.opus.is_loaded()}.'
-                            )
-                        if not done.done():
-                            done.set_result(error)
-                    try:
-                        loop.call_soon_threadsafe(finish_on_loop)
-                    except RuntimeError:
-                        pass
-
-                try:
-                    voice_client.play(source, after=playback_finished, signal_type='voice')
-                except Exception:
-                    voice_client.send_audio_packet = original_send_audio_packet
-                    raise
-                err = await done
-                if err:
-                    self.log(f'Ошибка воспроизведения: {type(err).__name__}: {err!r}')
             except Exception as exc:
+                if audio_stream is not None and playback_started:
+                    audio_stream.finish()
+                    if playback_done is not None:
+                        try:
+                            await playback_done
+                        except Exception:
+                            pass
+                if voice_client and original_send_audio_packet is not None:
+                    voice_client.send_audio_packet = original_send_audio_packet
                 self.log(f'Ошибка озвучивания: {type(exc).__name__}: {exc}')
             finally:
-                if file_name:
-                    Path(file_name).unlink(missing_ok=True)
                 self.queue.task_done()
 
     async def stop(self):
