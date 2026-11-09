@@ -125,7 +125,7 @@ class ArmenianAccentTTS:
 
             config_path = self.model_dir / "armenian_tri.yaml"
             reference_path = self.model_dir / "armenian_reference.wav"
-            text_module_path = self.model_dir / "hy_text.py"
+            text_module_path = self.model_dir / "configs" / "hy_text.py"
             for path in (config_path, reference_path, text_module_path):
                 if not path.is_file():
                     raise FileNotFoundError(f"Не найден ресурс армянского голоса: {path}")

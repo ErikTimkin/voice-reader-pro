@@ -39,7 +39,10 @@ async def main_async() -> None:
     import gc
     gc.collect()
 
-    armenian = ArmenianAccentTTS(ROOT / "voices" / "armenian", print)
+    armenian_assets = ROOT / "voices" / "armenian"
+    if not (armenian_assets / "configs" / "hy_text.py").is_file():
+        raise AssertionError("Armenian text normalizer is missing from configs/hy_text.py")
+    armenian = ArmenianAccentTTS(armenian_assets, print)
     armenian_path = samples / "armenian-accent-ru.wav"
     try:
         size, duration = await asyncio.to_thread(

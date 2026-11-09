@@ -7,11 +7,7 @@ import subprocess
 import tempfile
 import wave
 from pathlib import Path
-from urllib.parse import urlencode
 
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
 from huggingface_hub import HfApi, snapshot_download
 
 
@@ -69,22 +65,6 @@ def download_tera(root: Path) -> None:
     print("TeraTTSv2 files verified.", flush=True)
 
 
-def _dataset_config(session: requests.Session, target_split: str) -> str:
-    url = "https://datasets-server.huggingface.co/splits?" + urlencode(
-        {"dataset": ARMENIAN_DATASET}
-    )
-    response = session.get(url, timeout=60)
-    response.raise_for_status()
-    payload = response.json()
-    for split in payload.get("splits", []):
-        if split.get("split") == target_split:
-            return split["config"]
-    raise RuntimeError(
-        f"The synthetic Armenian dataset viewer did not expose the {target_split!r} split: "
-        + json.dumps(payload)[:1200]
-    )
-
-
 def _is_male(value: object) -> bool:
     normalized = str(value or "").strip().lower().replace("-", "_")
     if normalized in {"female", "female_feminine", "f", "woman"}:
@@ -94,31 +74,28 @@ def _is_male(value: object) -> bool:
     )
 
 
-def _audio_url(row: dict) -> str | None:
-    audio = row.get("audio")
-    if isinstance(audio, dict):
-        return audio.get("src")
-    if isinstance(audio, str) and audio.startswith("http"):
-        return audio
-    return None
+def _audio_parts(audio: object) -> tuple[bytes | None, str | None]:
+    """Return embedded audio bytes and an optional repository-relative path."""
+    if not isinstance(audio, dict):
+        return None, None
+    raw = audio.get("bytes")
+    if isinstance(raw, memoryview):
+        raw = raw.tobytes()
+    if isinstance(raw, bytearray):
+        raw = bytes(raw)
+    if not isinstance(raw, bytes) or not raw:
+        raw = None
+    path = audio.get("path")
+    return raw, str(path) if path else None
 
 
-def _convert_candidate(
-    session: requests.Session,
-    audio_url: str,
+def _convert_audio_file(
+    source: Path,
     ffmpeg: Path,
     temporary_dir: Path,
     index: int,
 ) -> tuple[Path, float]:
-    source = temporary_dir / f"source-{index}"
     output_path = temporary_dir / f"clip-{index}.wav"
-    response = session.get(audio_url, timeout=(30, 120), stream=True)
-    response.raise_for_status()
-    with source.open("wb") as output:
-        for chunk in response.iter_content(chunk_size=1024 * 1024):
-            if chunk:
-                output.write(chunk)
-
     command = [
         str(ffmpeg),
         "-hide_banner",
@@ -141,7 +118,8 @@ def _convert_candidate(
     result = subprocess.run(command, capture_output=True, text=True, timeout=120)
     if result.returncode != 0 or not output_path.is_file():
         raise RuntimeError(
-            "FFmpeg could not convert the Armenian reference clip: " + result.stderr[-800:]
+            "FFmpeg could not convert the Armenian reference clip: "
+            + result.stderr[-800:]
         )
     with wave.open(str(output_path), "rb") as audio:
         duration = audio.getnframes() / float(audio.getframerate())
@@ -149,112 +127,179 @@ def _convert_candidate(
 
 
 def download_armenian_reference(root: Path, ffmpeg: Path) -> None:
+    """Read a short male reference directly from a pinned Hub Parquet shard.
+
+    This deliberately avoids datasets-server's rows endpoint: its rate limits
+    and audio URL representation are not reliable for large audio datasets.
+    The dataset is CC0-1.0. Only a short audio crop is copied into the app.
+    """
+    from huggingface_hub import HfApi, hf_hub_download
+    import pyarrow.parquet as pq
+
     target_dir = root / "armenian"
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / "armenian_reference.wav"
     if target.is_file() and target.stat().st_size > 10_000:
-        return
+        with wave.open(str(target), "rb") as existing:
+            duration = existing.getnframes() / float(existing.getframerate())
+        if 5.0 <= duration <= 10.0:
+            print(f"Using existing Armenian reference clip: {duration:.2f}s.", flush=True)
+            return
+        target.unlink(missing_ok=True)
 
-    session = requests.Session()
-    retry = Retry(
-        total=3,
-        connect=3,
-        read=3,
-        backoff_factor=0.4,
-        status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=frozenset({"GET"}),
-        respect_retry_after_header=True,
+    api = HfApi()
+    info = api.dataset_info(ARMENIAN_DATASET)
+    revision = info.sha
+    repo_files = api.list_repo_files(
+        repo_id=ARMENIAN_DATASET,
+        repo_type="dataset",
+        revision=revision,
     )
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
-    session.headers.update({"User-Agent": "VoiceReaderPro-model-pack/1.0"})
+    shards = sorted(
+        name
+        for name in repo_files
+        if name.startswith("data/")
+        and name.endswith(".parquet")
+        and "generated-" in Path(name).name
+    )
+    if not shards:
+        raise RuntimeError(
+            f"No generated Parquet shards were found in {ARMENIAN_DATASET}."
+        )
 
-    split_name = "generated"
-    config = _dataset_config(session, split_name)
     print(
-        f"Looking for a 5–10 second synthetic male Armenian voice sample "
-        f"(config={config}, split={split_name})…",
+        f"Downloading a pinned Armenian dataset shard at revision {revision[:12]} "
+        "to extract a CC0 synthetic male reference…",
         flush=True,
     )
 
-    total_rows = None
-    male_rows = 0
-    audio_candidates = 0
+    total_male_rows = 0
+    total_audio_rows = 0
+    converted_rows = 0
     clip_index = 0
-    voice_clips: dict[str, list[tuple[Path, float]]] = {}
 
-    with tempfile.TemporaryDirectory(prefix="armenian-reference-batch-") as temp_name:
+    with tempfile.TemporaryDirectory(prefix="armenian-reference-") as temp_name:
         temporary_dir = Path(temp_name)
+        voice_clips: dict[str, list[tuple[Path, float]]] = {}
 
-        for offset in range(0, 10_000, 100):
-            url = "https://datasets-server.huggingface.co/rows?" + urlencode(
-                {
-                    "dataset": ARMENIAN_DATASET,
-                    "config": config,
-                    "split": split_name,
-                    "offset": offset,
-                    "length": 100,
-                }
-            )
-            try:
-                response = session.get(url, timeout=45)
-                response.raise_for_status()
-                payload = response.json()
-            except requests.RequestException as exc:
-                print(
-                    f"Dataset viewer failed at offset {offset}; skipping this page after retries: {exc}",
-                    flush=True,
+        # One shard is about 450 MB and contains thousands of examples. A
+        # second shard is attempted only if the first one has no usable sample.
+        for shard_name in shards[:2]:
+            shard_path = Path(
+                hf_hub_download(
+                    repo_id=ARMENIAN_DATASET,
+                    repo_type="dataset",
+                    filename=shard_name,
+                    revision=revision,
                 )
-                continue
+            )
+            print(
+                f"Downloaded {Path(shard_name).name} "
+                f"({shard_path.stat().st_size / (1024 * 1024):.0f} MB).",
+                flush=True,
+            )
+            parquet_file = pq.ParquetFile(str(shard_path))
+            available = set(parquet_file.schema_arrow.names)
+            if not {"audio", "gender"}.issubset(available):
+                raise RuntimeError(
+                    f"Unexpected Armenian dataset columns in {shard_name}: "
+                    f"{sorted(available)}"
+                )
+            columns = ["audio", "gender"]
+            if "client_id" in available:
+                columns.append("client_id")
 
-            total_rows = payload.get("num_rows_total", total_rows)
-            rows = payload.get("rows", [])
-            page_male_rows = 0
+            for batch in parquet_file.iter_batches(batch_size=64, columns=columns):
+                audio_values = batch.column(batch.schema.get_field_index("audio"))
+                gender_values = batch.column(batch.schema.get_field_index("gender"))
+                client_values = (
+                    batch.column(batch.schema.get_field_index("client_id"))
+                    if "client_id" in columns
+                    else None
+                )
 
-            for wrapper in rows:
-                row = wrapper.get("row", {})
-                if not _is_male(row.get("gender")):
-                    continue
-                page_male_rows += 1
-                male_rows += 1
-                audio_url = _audio_url(row)
-                if not audio_url:
-                    continue
+                for row_index in range(batch.num_rows):
+                    if not _is_male(gender_values[row_index].as_py()):
+                        continue
+                    total_male_rows += 1
 
-                audio_candidates += 1
-                clip_index += 1
-                try:
-                    clip_path, duration = _convert_candidate(
-                        session, audio_url, ffmpeg, temporary_dir, clip_index
+                    audio_bytes, audio_path = _audio_parts(
+                        audio_values[row_index].as_py()
                     )
-                except Exception as exc:
-                    print(f"Skipping an unreadable synthetic audio clip: {exc}", flush=True)
-                    continue
+                    source_path: Path | None = None
+                    if audio_bytes:
+                        clip_index += 1
+                        source_path = temporary_dir / f"source-{clip_index}.audio"
+                        source_path.write_bytes(audio_bytes)
+                    elif audio_path:
+                        # Some Parquet variants store a repository path instead
+                        # of embedding audio bytes. Resolve it at the same pin.
+                        try:
+                            source_path = Path(
+                                hf_hub_download(
+                                    repo_id=ARMENIAN_DATASET,
+                                    repo_type="dataset",
+                                    filename=audio_path,
+                                    revision=revision,
+                                )
+                            )
+                        except Exception as exc:
+                            print(
+                                f"Skipping a missing audio asset in {shard_name}: {exc}",
+                                flush=True,
+                            )
+                            continue
+                    else:
+                        continue
 
-                # client_id is used only in memory to join clips from the same
-                # synthetic voice. It is never written to the package or logs.
-                voice_id = str(row.get("client_id") or f"single-clip-{clip_index}")
-                voice_clips.setdefault(voice_id, []).append((clip_path, duration))
+                    total_audio_rows += 1
+                    clip_index += 1
+                    try:
+                        converted, duration = _convert_audio_file(
+                            source_path,
+                            ffmpeg,
+                            temporary_dir,
+                            clip_index,
+                        )
+                    except Exception as exc:
+                        print(
+                            f"Skipping an unreadable Armenian audio sample: {exc}",
+                            flush=True,
+                        )
+                        continue
+                    converted_rows += 1
 
-                if 5.0 <= duration <= 10.0:
-                    shutil.copy2(clip_path, target)
-                    print(
-                        f"Selected one synthetic male Armenian reference clip: {duration:.2f}s.",
-                        flush=True,
+                    if 5.0 <= duration <= 10.0:
+                        shutil.copy2(converted, target)
+                        print(
+                            f"Selected a synthetic male Armenian reference: {duration:.2f}s.",
+                            flush=True,
+                        )
+                        return
+
+                    speaker_id = (
+                        str(client_values[row_index].as_py())
+                        if client_values is not None
+                        and client_values[row_index].as_py()
+                        else f"single-{clip_index}"
                     )
-                    return
+                    speaker_samples = voice_clips.setdefault(speaker_id, [])
+                    if len(speaker_samples) < 4:
+                        speaker_samples.append((converted, duration))
+                    if sum(item[1] for item in speaker_samples) < 5.0:
+                        continue
 
-                combined_duration = sum(item[1] for item in voice_clips[voice_id])
-                if combined_duration >= 5.0:
-                    list_file = temporary_dir / "reference-list.txt"
-                    entries = []
-                    for path, _duration in voice_clips[voice_id]:
-                        escaped = str(path.resolve()).replace("'", "'\\''")
-                        entries.append(f"file '{escaped}'")
-                    list_file.write_text("\\n".join(entries) + "\\n", encoding="utf-8")
-
-                    concat_command = [
+                    list_file = temporary_dir / f"concat-{clip_index}.txt"
+                    entries = [
+                        "file '" + path.resolve().as_posix().replace("'", "'\\''") + "'"
+                        for path, _ in speaker_samples
+                    ]
+                    list_file.write_text(
+                        "\n".join(entries) + "\n",
+                        encoding="utf-8",
+                    )
+                    combined_path = temporary_dir / f"combined-{clip_index}.wav"
+                    command = [
                         str(ffmpeg),
                         "-hide_banner",
                         "-loglevel",
@@ -274,34 +319,39 @@ def download_armenian_reference(root: Path, ffmpeg: Path) -> None:
                         "24000",
                         "-c:a",
                         "pcm_s16le",
-                        str(target),
+                        str(combined_path),
                     ]
                     result = subprocess.run(
-                        concat_command, capture_output=True, text=True, timeout=120
+                        command,
+                        capture_output=True,
+                        text=True,
+                        timeout=120,
                     )
-                    if result.returncode == 0 and target.is_file():
-                        with wave.open(str(target), "rb") as audio:
-                            final_duration = audio.getnframes() / float(audio.getframerate())
+                    if result.returncode == 0 and combined_path.is_file():
+                        with wave.open(str(combined_path), "rb") as audio:
+                            final_duration = (
+                                audio.getnframes() / float(audio.getframerate())
+                            )
                         if 5.0 <= final_duration <= 10.0:
+                            shutil.copy2(combined_path, target)
                             print(
-                                f"Combined {len(voice_clips[voice_id])} clips from one synthetic male voice: "
-                                f"{final_duration:.2f}s.",
+                                f"Combined {len(speaker_samples)} clips from one "
+                                f"synthetic male Armenian voice: {final_duration:.2f}s.",
                                 flush=True,
                             )
                             return
-                    target.unlink(missing_ok=True)
 
             print(
-                f"Scanned dataset page {offset // 100 + 1}: "
-                f"{page_male_rows} male rows; {male_rows} total male rows checked.",
+                f"Scanned {Path(shard_name).name}: {total_male_rows} male rows, "
+                f"{total_audio_rows} audio records, {converted_rows} converted.",
                 flush=True,
             )
-            if total_rows and offset + 100 >= total_rows:
-                break
 
     raise RuntimeError(
-        f"No 5–10 second male synthetic Armenian reference found: "
-        f"{male_rows} male rows and {audio_candidates} audio candidates checked."
+        "Could not extract a 5–10 second synthetic male Armenian reference "
+        f"from the first {min(2, len(shards))} pinned Parquet shard(s): "
+        f"{total_male_rows} male rows, {total_audio_rows} audio records, "
+        f"{converted_rows} converted. No fallback voice was substituted."
     )
 
 
