@@ -6,7 +6,6 @@ import os
 import re
 import tempfile
 import time
-from collections import defaultdict, deque
 from pathlib import Path
 
 import aiohttp
@@ -14,8 +13,7 @@ from aiohttp import web
 import discord
 from voice_reader.local_tts import LocalSileroTTS, VOICE_PRESETS, resolve_voice_profile
 
-MAX_TEXT, MAX_QUEUE = 350, 20
-RATE_WINDOW, RATE_COUNT = 60, 5
+MAX_TEXT = 350
 
 
 def normalize_voice_key(value, default="normal"):
@@ -84,13 +82,13 @@ class VoiceService:
         self.local_tts = LocalSileroTTS(tts_model_path, logger)
         self.tts_ready = asyncio.Event()
         self.tts_error = None
-        self.queue = asyncio.Queue(MAX_QUEUE)
+        # Unbounded FIFO: users can submit repeatedly without per-minute throttling.
+        self.queue = asyncio.Queue()
         self.client = discord.Client(intents=discord.Intents(guilds=True, voice_states=True))
         self.runner = self.site = self.tunnel = self.worker = self.discord_task = self.start_watchdog = None
         self.tts_load_task = self.loop_watchdog_task = None
         self.voice_client = None
         self.ready = asyncio.Event()
-        self.visitors = defaultdict(deque)
 
         # Forward voice/gateway diagnostics into the GUI journal.
         class UILogHandler(logging.Handler):
@@ -270,23 +268,10 @@ class VoiceService:
     async def index(self, request):
         return web.FileResponse(Path(__file__).parent / 'static' / 'index.html')
 
-    def allowed(self, request):
-        ip = request.remote or 'unknown'
-        now = time.monotonic()
-        bucket = self.visitors[ip]
-        while bucket and now - bucket[0] > RATE_WINDOW:
-            bucket.popleft()
-        if len(bucket) >= RATE_COUNT:
-            return False
-        bucket.append(now)
-        return True
-
     async def speak(self, request):
         request_started = time.perf_counter()
         if not self.ready.is_set():
             return web.json_response({'message': 'Бот ещё не подключён к голосовому каналу.'}, status=503)
-        if not self.allowed(request):
-            return web.json_response({'message': 'Слишком много сообщений. Подождите минуту.'}, status=429)
         try:
             payload = await request.json()
             if not isinstance(payload, dict):
@@ -301,9 +286,6 @@ class VoiceService:
         text = re.sub(r'\n{3,}', '\n\n', text).strip()
         if not text or len(text) > MAX_TEXT:
             return web.json_response({'message': 'Введите от 1 до 350 символов.'}, status=400)
-        if self.queue.full():
-            return web.json_response({'message': 'Очередь заполнена. Попробуйте позже.'}, status=429)
-
         enqueued_at = time.perf_counter()
         await self.queue.put((text, requested_voice, enqueued_at))
         queue_size = self.queue.qsize()
