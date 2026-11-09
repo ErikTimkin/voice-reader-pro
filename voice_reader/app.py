@@ -116,9 +116,9 @@ class App:
 
         self.fields = {}
 
-        def add_field(parent, label, key, show='', column=0, columnspan=1):
+        def add_field(parent, label, key, show='', row=0, column=0, columnspan=1):
             cell = ttk.Frame(parent, style='Card.TFrame')
-            cell.grid(row=0, column=column, columnspan=columnspan,
+            cell.grid(row=row, column=column, columnspan=columnspan,
                       sticky='ew', padx=(0 if column == 0 else 10, 0), pady=(0, 12))
             ttk.Label(cell, text=label, style='Field.TLabel').pack(anchor='w', pady=(0, 6))
             if key == 'voice':
@@ -141,10 +141,10 @@ class App:
         fields_grid.columnconfigure(0, weight=1)
         fields_grid.columnconfigure(1, weight=1)
 
-        add_field(fields_grid, 'ТОКЕН DISCORD-БОТА', 'token', show='•', column=0, columnspan=2)
-        add_field(fields_grid, 'ID СЕРВЕРА', 'guild_id', column=0)
-        add_field(fields_grid, 'ID ГОЛОСОВОГО КАНАЛА', 'channel_id', column=1)
-        add_field(fields_grid, 'ГОЛОС ПО УМОЛЧАНИЮ', 'voice', column=0, columnspan=2)
+        add_field(fields_grid, 'ТОКЕН DISCORD-БОТА', 'token', show='•', row=0, column=0, columnspan=2)
+        add_field(fields_grid, 'ID СЕРВЕРА', 'guild_id', row=1, column=0)
+        add_field(fields_grid, 'ID ГОЛОСОВОГО КАНАЛА', 'channel_id', row=1, column=1)
+        add_field(fields_grid, 'ГОЛОС ПО УМОЛЧАНИЮ', 'voice', row=2, column=0, columnspan=2)
 
         controls = ttk.Frame(card, style='Card.TFrame')
         controls.pack(fill='x', pady=(2, 6))
