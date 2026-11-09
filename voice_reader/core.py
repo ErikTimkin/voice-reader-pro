@@ -127,7 +127,7 @@ class VoiceService:
             text = payload.get('text', '')
         except Exception:
             return web.json_response({'message': 'Некорректный запрос.'}, status=400)
-        text = re.sub(r'\\s+', ' ', str(text)).strip()
+        text = re.sub(r'\s+', ' ', str(text)).strip()
         if not text or len(text) > MAX_TEXT:
             return web.json_response({'message': 'Введите от 1 до 350 символов.'}, status=400)
         if self.queue.full():
