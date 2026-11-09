@@ -13,7 +13,7 @@ async def main_async() -> None:
     if not model_path.is_file():
         raise SystemExit(f"Silero model not found: {model_path}")
 
-    tts = LocalSileroTTS(model_path, print)
+    tts = LocalSileroTTS(model_path, lambda _message: None)
     await asyncio.to_thread(tts.load)
 
     expected = {
