@@ -20,8 +20,13 @@ RATE_WINDOW, RATE_COUNT = 60, 5
 
 def normalize_voice_key(value, default="normal"):
     key = str(value if value is not None else default).strip()
+    if key == "pudge":
+        raise ValueError(
+            "Оригинальный голос Пуджа пока не подключён. Нужен лицензированный голосовой пакет; "
+            "низкий голос Silero не является голосом персонажа."
+        )
     if key not in VOICE_PRESETS:
-        raise ValueError("Неизвестный голос. Обновите страницу и выберите один из доступных вариантов.")
+        raise ValueError("Неизвестный голос. Обновите страницу и выберите доступный вариант.")
     return key
 
 class DiagnosticFFmpegPCMAudio(discord.FFmpegPCMAudio):
@@ -292,7 +297,8 @@ class VoiceService:
             return web.json_response({'message': str(exc) or 'Некорректный запрос.'}, status=400)
         except Exception:
             return web.json_response({'message': 'Некорректный запрос.'}, status=400)
-        text = re.sub(r'\s+', ' ', str(text)).strip()
+        text = re.sub(r'[ \t]+', ' ', str(text))
+        text = re.sub(r'\n{3,}', '\n\n', text).strip()
         if not text or len(text) > MAX_TEXT:
             return web.json_response({'message': 'Введите от 1 до 350 символов.'}, status=400)
         if self.queue.full():
