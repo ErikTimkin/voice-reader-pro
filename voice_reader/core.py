@@ -3,8 +3,8 @@ import array
 import logging
 import math
 import os
-import queue as thread_queue
 import re
+import tempfile
 import time
 from collections import defaultdict, deque
 from pathlib import Path
@@ -12,68 +12,10 @@ from pathlib import Path
 import aiohttp
 from aiohttp import web
 import discord
-import edge_tts
-from edge_tts.exceptions import NoAudioReceived
+from voice_reader.local_tts import LocalSileroTTS, resolve_voice_profile
 
 MAX_TEXT, MAX_QUEUE = 350, 20
 RATE_WINDOW, RATE_COUNT = 60, 5
-
-# Presets use Microsoft's standard Russian neural voices. The Pudge option is
-# a low-pitched/slow Dmitry preset, not a clone of the Dota 2 character voice.
-VOICE_PRESETS = {
-    "dmitry": {
-        "label": "Дмитрий — обычный",
-        "voice": "ru-RU-DmitryNeural",
-        "rate": "+0%",
-        "pitch": "+0Hz",
-    },
-    "pudge": {
-        "label": "Пудж — низкий и басовый",
-        "voice": "ru-RU-DmitryNeural",
-        "rate": "-10%",
-        "pitch": "-18Hz",
-    },
-    "svetlana": {
-        "label": "Светлана — мягкий женский",
-        "voice": "ru-RU-SvetlanaNeural",
-        "rate": "+0%",
-        "pitch": "+0Hz",
-    },
-    "cute_girl": {
-        "label": "Милая девушка — звонкий голос",
-        "voice": "ru-RU-SvetlanaNeural",
-        "rate": "+3%",
-        "pitch": "+10Hz",
-    },
-    "dariya": {
-        "label": "Дарья — другой женский голос",
-        "voice": "ru-RU-DariyaNeural",
-        "rate": "+0%",
-        "pitch": "+0Hz",
-    },
-}
-
-VOICE_PRESET_LABELS = {key: value["label"] for key, value in VOICE_PRESETS.items()}
-VOICE_LABEL_TO_PRESET = {value["label"]: key for key, value in VOICE_PRESETS.items()}
-LEGACY_VOICE_IDS = {
-    "ru-RU-DmitryNeural": "dmitry",
-    "ru-RU-SvetlanaNeural": "svetlana",
-    "ru-RU-DariyaNeural": "dariya",
-}
-
-
-def resolve_voice_profile(selection):
-    key = LEGACY_VOICE_IDS.get(selection, selection)
-    if key in VOICE_PRESETS:
-        return dict(VOICE_PRESETS[key])
-    # Preserve support for a custom Edge TTS voice ID entered in older configs.
-    return {
-        "label": selection or VOICE_PRESETS["dmitry"]["label"],
-        "voice": selection or "ru-RU-DmitryNeural",
-        "rate": "+0%",
-        "pitch": "+0Hz",
-    }
-
 
 class DiagnosticFFmpegPCMAudio(discord.FFmpegPCMAudio):
     """FFmpeg-to-PCM source that reports decoded frame count and signal level."""
@@ -122,50 +64,18 @@ class DiagnosticFFmpegPCMAudio(discord.FFmpegPCMAudio):
                 self._voice_log('ПРЕДУПРЕЖДЕНИЕ: уровень PCM очень низкий; возможна почти полная тишина.')
         return data
 
-class BlockingMP3Stream:
-    """File-like blocking reader fed by Edge TTS async audio chunks."""
-
-    def __init__(self):
-        self._chunks = thread_queue.Queue()
-        self._buffer = bytearray()
-        self._finished = False
-
-    def feed(self, data: bytes) -> None:
-        if data:
-            self._chunks.put(data)
-
-    def finish(self) -> None:
-        self._chunks.put(None)
-
-    def read(self, size: int = -1) -> bytes:
-        if size is None or size < 0:
-            size = 8192
-
-        # Do not wait until the buffer reaches FFmpeg's requested 8192 bytes.
-        # Returning the first available TTS chunk immediately cuts startup latency.
-        while not self._buffer and not self._finished:
-            chunk = self._chunks.get()
-            if chunk is None:
-                self._finished = True
-                break
-            self._buffer.extend(chunk)
-
-        if not self._buffer:
-            return b''
-        count = min(size, len(self._buffer))
-        data = bytes(self._buffer[:count])
-        del self._buffer[:count]
-        return data
-
-
 class VoiceService:
-    def __init__(self, token, guild_id, channel_id, voice, ffmpeg, logger):
+    def __init__(self, token, guild_id, channel_id, voice, ffmpeg, logger, tts_model_path):
         self.token = token
         self.guild_id, self.channel_id = int(guild_id), int(channel_id)
         self.voice, self.ffmpeg, self.log = voice, str(ffmpeg), logger
+        self.local_tts = LocalSileroTTS(tts_model_path, logger)
+        self.tts_ready = asyncio.Event()
+        self.tts_error = None
         self.queue = asyncio.Queue(MAX_QUEUE)
         self.client = discord.Client(intents=discord.Intents(guilds=True, voice_states=True))
         self.runner = self.site = self.tunnel = self.worker = self.discord_task = self.start_watchdog = None
+        self.tts_load_task = self.loop_watchdog_task = None
         self.voice_client = None
         self.ready = asyncio.Event()
         self.visitors = defaultdict(deque)
@@ -271,10 +181,37 @@ class VoiceService:
         self.site = web.TCPSite(self.runner, '127.0.0.1', 8765)
         await self.site.start()
         self.worker = asyncio.create_task(self.play_worker())
+        self.tts_load_task = asyncio.create_task(self._load_local_tts())
+        self.loop_watchdog_task = asyncio.create_task(self._watch_event_loop())
         self.discord_task = asyncio.create_task(self._start_discord())
         self.discord_task.add_done_callback(self._discord_finished)
         self.start_watchdog = asyncio.create_task(self._check_discord_startup())
-        self.log('Веб-сервер запущен. Подключаем бота к Discord…')
+        self.log('Веб-сервер запущен. Загружается локальный голосовой движок; подключаем бота к Discord…')
+
+    async def _load_local_tts(self):
+        started = time.perf_counter()
+        try:
+            # CPU-heavy model loading and warm-up must not block Discord heartbeats.
+            await asyncio.to_thread(self.local_tts.load)
+            elapsed = (time.perf_counter() - started) * 1000
+            self.log(f'Локальная модель Silero готова за {elapsed:.0f} мс. Все три голоса работают без Microsoft TTS.')
+        except Exception as exc:
+            self.tts_error = f'{type(exc).__name__}: {exc}'
+            self.log(f'Не удалось загрузить локальную модель голоса: {self.tts_error}')
+        finally:
+            self.tts_ready.set()
+
+    async def _watch_event_loop(self):
+        # Discord heartbeat warnings mean the asyncio loop was not scheduled.
+        loop = asyncio.get_running_loop()
+        expected = loop.time() + 1.0
+        while True:
+            await asyncio.sleep(1.0)
+            now = loop.time()
+            lag = now - expected
+            if lag > 0.75:
+                self.log(f'Задержка event loop: {lag:.2f} сек. Синтез голоса выполняется в отдельном потоке.')
+            expected = now + 1.0
 
     async def _start_discord(self):
         try:
@@ -357,10 +294,11 @@ class VoiceService:
             f'Сайт → очередь: принято за {elapsed_ms:.0f} мс; '
             f'символов={len(text)}, сообщений впереди={max(0, queue_size - 1)}.'
         )
-        return web.json_response({
-            'message': 'Принято. Начинаю озвучивание.' if queue_size == 1
-            else f'Добавлено в очередь: {queue_size}.'
-        })
+        if not self.tts_ready.is_set():
+            message = 'Принято. Загружаю локальные голоса…'
+        else:
+            message = 'Принято. Начинаю озвучивание.' if queue_size == 1 else f'Добавлено в очередь: {queue_size}.'
+        return web.json_response({'message': message})
 
     async def play_worker(self):
         while True:
@@ -370,230 +308,142 @@ class VoiceService:
             else:
                 text, enqueued_at = item, time.perf_counter()
 
-            audio_stream = None
-            playback_done = None
+            file_name = None
+            done = None
             voice_client = None
             original_send_audio_packet = None
-            playback_started = False
 
             try:
                 queue_wait_ms = (time.perf_counter() - enqueued_at) * 1000
                 self.log(f'Начинаю сообщение: очередь ожидала {queue_wait_ms:.0f} мс.')
+
                 if not self.voice_client or not self.voice_client.is_connected():
                     self.ready.clear()
                     self.log('Голосовое соединение потеряно. Новые сообщения временно не принимаются.')
                     continue
 
-                selected_profile = resolve_voice_profile(self.voice)
-                profiles_to_try = [selected_profile]
-                fallback_profile = (
-                    VOICE_PRESETS["dmitry"]
-                    if selected_profile["voice"] == "ru-RU-SvetlanaNeural"
-                    else VOICE_PRESETS["svetlana"]
+                await self.tts_ready.wait()
+                if self.tts_error:
+                    self.log(f'Озвучивание недоступно: {self.tts_error}')
+                    continue
+
+                profile = resolve_voice_profile(self.voice)
+                self.log(
+                    f'Локальная озвучка: {profile["label"]}; '
+                    f'диктор Silero={profile["speaker"]}.'
                 )
-                if fallback_profile["voice"] != selected_profile["voice"]:
-                    profiles_to_try.append(dict(fallback_profile))
 
-                synthesized = False
-                last_tts_error = None
+                fd, file_name = tempfile.mkstemp(suffix='.wav', prefix='voice-reader-')
+                os.close(fd)
+                synth_started = time.perf_counter()
 
-                for voice_index, candidate_profile in enumerate(profiles_to_try):
-                    candidate_voice = candidate_profile["voice"]
-                    for attempt in range(1, 3):
-                        audio_stream = None
-                        playback_done = None
-                        playback_started = False
-                        voice_client = None
-                        original_send_audio_packet = None
-                        tts_started = time.perf_counter()
+                # Silero inference is CPU-heavy. Run it outside the asyncio loop
+                # so Discord gateway and voice heartbeats remain responsive.
+                audio_bytes, audio_duration = await asyncio.to_thread(
+                    self.local_tts.synthesize_to_wav,
+                    text,
+                    profile["speaker"],
+                    file_name,
+                )
+                synth_ms = (time.perf_counter() - synth_started) * 1000
+                self.log(
+                    f'Локальная модель создала звук за {synth_ms:.0f} мс: '
+                    f'{audio_duration:.2f} сек, {audio_bytes} байт.'
+                )
 
-                        try:
-                            if voice_index == 0 and attempt == 1:
-                                self.log(
-                                    f'Запрашиваю поток Edge TTS: {candidate_profile["label"]} '
-                                    f'({candidate_voice}), скорость {candidate_profile["rate"]}, '
-                                    f'тон {candidate_profile["pitch"]}.'
-                                )
-                            elif voice_index == 0:
-                                self.log(f'Edge TTS не прислал аудио. Повторная попытка {attempt}/2…')
-                            else:
-                                self.log(f'Пробую запасной голос {candidate_profile["label"]} ({candidate_voice})…')
+                if not self.voice_client or not self.voice_client.is_connected():
+                    self.ready.clear()
+                    self.log('Голосовое соединение оборвалось во время локального синтеза.')
+                    continue
 
-                            communicate = edge_tts.Communicate(
-                                text,
-                                candidate_voice,
-                                rate=candidate_profile["rate"],
-                                pitch=candidate_profile["pitch"],
-                            )
-                            audio_bytes = 0
+                voice_client = self.voice_client
+                connection_state = voice_client._connection
+                dave_session = getattr(connection_state, 'dave_session', None)
+                self.log(
+                    'Голосовой тракт: '
+                    f'connected={voice_client.is_connected()}, mode={voice_client.mode}, '
+                    f'DAVE_protocol={getattr(connection_state, "dave_protocol_version", None)}, '
+                    f'DAVE_session_ready={getattr(dave_session, "ready", None)}, '
+                    f'DAVE_can_encrypt={getattr(connection_state, "can_encrypt", None)}, '
+                    f'Opus_loaded={discord.opus.is_loaded()}.'
+                )
 
-                            async for chunk in communicate.stream():
-                                if chunk.get('type') != 'audio':
-                                    continue
-                                data = chunk.get('data') or b''
-                                if not data:
-                                    continue
+                done = asyncio.get_running_loop().create_future()
+                loop = asyncio.get_running_loop()
+                packet_stats = {'count': 0, 'bytes': 0}
+                original_send_audio_packet = voice_client.send_audio_packet
 
-                                audio_bytes += len(data)
-                                if not playback_started:
-                                    if not self.voice_client or not self.voice_client.is_connected():
-                                        self.ready.clear()
-                                        raise RuntimeError('Discord voice connection was lost before first audio chunk')
+                def counted_send_audio_packet(packet_data, *, encode=True):
+                    original_send_audio_packet(packet_data, encode=encode)
+                    packet_stats['count'] += 1
+                    packet_stats['bytes'] += len(packet_data)
 
-                                    audio_stream = BlockingMP3Stream()
-                                    audio_stream.feed(data)
-                                    playback_done = asyncio.get_running_loop().create_future()
-                                    loop = asyncio.get_running_loop()
-                                    voice_client = self.voice_client
-                                    connection_state = voice_client._connection
-                                    dave_session = getattr(connection_state, 'dave_session', None)
-                                    self.log(
-                                        'Голосовой тракт: '
-                                        f'connected={voice_client.is_connected()}, mode={voice_client.mode}, '
-                                        f'DAVE_protocol={getattr(connection_state, "dave_protocol_version", None)}, '
-                                        f'DAVE_session_ready={getattr(dave_session, "ready", None)}, '
-                                        f'DAVE_can_encrypt={getattr(connection_state, "can_encrypt", None)}, '
-                                        f'Opus_loaded={discord.opus.is_loaded()}.'
-                                    )
+                voice_client.send_audio_packet = counted_send_audio_packet
 
-                                    packet_stats = {'count': 0, 'bytes': 0}
-                                    original_send_audio_packet = voice_client.send_audio_packet
-
-                                    def counted_send_audio_packet(packet_data, *, encode=True):
-                                        original_send_audio_packet(packet_data, encode=encode)
-                                        packet_stats['count'] += 1
-                                        packet_stats['bytes'] += len(packet_data)
-
-                                    voice_client.send_audio_packet = counted_send_audio_packet
-
-                                    def playback_finished(error):
-                                        def finish_on_loop():
-                                            voice_client.send_audio_packet = original_send_audio_packet
-                                            self.log(
-                                                f'Пакеты Discord: {packet_stats["count"]}; '
-                                                f'передано данных PCM: {packet_stats["bytes"]} байт.'
-                                            )
-                                            if error:
-                                                self.log(f'Ошибка воспроизведения: {type(error).__name__}: {error!r}')
-                                            else:
-                                                self.log(
-                                                    f'Аудиопоток завершён. Discord подключён: '
-                                                    f'{voice_client.is_connected()}.'
-                                                )
-                                            if not playback_done.done():
-                                                playback_done.set_result(error)
-                                        try:
-                                            loop.call_soon_threadsafe(finish_on_loop)
-                                        except RuntimeError:
-                                            pass
-
-                                    source = DiagnosticFFmpegPCMAudio(
-                                        audio_stream,
-                                        executable=self.ffmpeg,
-                                        logger=self.log,
-                                        pipe=True,
-                                        before_options='-nostdin -f mp3 -probesize 32 -analyzeduration 0',
-                                        options='-af volume=1.5',
-                                    )
-                                    try:
-                                        voice_client.play(source, after=playback_finished, signal_type='voice')
-                                    except Exception:
-                                        voice_client.send_audio_packet = original_send_audio_packet
-                                        original_send_audio_packet = None
-                                        raise
-
-                                    playback_started = True
-                                    first_audio_ms = (time.perf_counter() - tts_started) * 1000
-                                    self.log(
-                                        f'Первый аудиофрагмент получен за {first_audio_ms:.0f} мс; '
-                                        f'начинаю воспроизведение, {len(data)} байт в первом фрагменте.'
-                                    )
-                                else:
-                                    audio_stream.feed(data)
-
-                            if not playback_started:
-                                raise NoAudioReceived('Edge TTS finished without returning audio.')
-
-                            audio_stream.finish()
-                            total_tts_ms = (time.perf_counter() - tts_started) * 1000
+                def playback_finished(error):
+                    def finish_on_loop():
+                        voice_client.send_audio_packet = original_send_audio_packet
+                        self.log(
+                            f'Пакеты Discord: {packet_stats["count"]}; '
+                            f'размер пакетов: {packet_stats["bytes"]} байт.'
+                        )
+                        if error:
+                            self.log(f'Ошибка воспроизведения: {type(error).__name__}: {error!r}')
+                        else:
                             self.log(
-                                f'Edge TTS передал весь текст за {total_tts_ms:.0f} мс; '
-                                f'аудио={audio_bytes} байт, голос={candidate_voice}.'
+                                f'Локальный аудиофайл передан. Discord подключён: '
+                                f'{voice_client.is_connected()}.'
                             )
-                            playback_error = await playback_done
-                            if playback_error:
-                                self.log(
-                                    f'Ошибка передачи звука: {type(playback_error).__name__}: {playback_error!r}'
-                                )
-                            synthesized = True
-                            break
+                        if not done.done():
+                            done.set_result(error)
+                    try:
+                        loop.call_soon_threadsafe(finish_on_loop)
+                    except RuntimeError:
+                        pass
 
-                        except NoAudioReceived as exc:
-                            last_tts_error = exc
-                            if playback_started and audio_stream is not None:
-                                audio_stream.finish()
-                                self.log(
-                                    f'Edge TTS оборвал поток после начала воспроизведения: {exc}. '
-                                    'Уже полученная часть будет доиграна.'
-                                )
-                                if playback_done is not None:
-                                    await playback_done
-                                synthesized = True
-                                break
-                            self.log(
-                                f'Edge TTS не вернул первый фрагмент ({candidate_voice}, '
-                                f'попытка {attempt}/2): {exc}'
-                            )
-                            if attempt < 2:
-                                await asyncio.sleep(0.8)
-                        except Exception as exc:
-                            last_tts_error = exc
-                            if playback_started and audio_stream is not None:
-                                audio_stream.finish()
-                                self.log(
-                                    f'Поток озвучивания прервался после старта: '
-                                    f'{type(exc).__name__}: {exc}'
-                                )
-                                if playback_done is not None:
-                                    await playback_done
-                                synthesized = True
-                                break
-                            self.log(
-                                f'Ошибка Edge TTS ({candidate_voice}): {type(exc).__name__}: {exc}'
-                            )
-                            if attempt < 2:
-                                await asyncio.sleep(0.8)
-                    if synthesized:
-                        break
+                source = DiagnosticFFmpegPCMAudio(
+                    file_name,
+                    executable=self.ffmpeg,
+                    logger=self.log,
+                    before_options='-nostdin',
+                    options=profile.get('ffmpeg_options', ''),
+                )
+                try:
+                    voice_client.play(source, after=playback_finished, signal_type='voice')
+                except Exception:
+                    voice_client.send_audio_packet = original_send_audio_packet
+                    original_send_audio_packet = None
+                    raise
 
-                if not synthesized:
+                playback_error = await done
+                if playback_error:
                     self.log(
-                        'Не удалось получить аудио ни основным, ни запасным голосом. '
-                        f'Последняя ошибка: {type(last_tts_error).__name__ if last_tts_error else "Unknown"}: '
-                        f'{last_tts_error}.'
+                        f'Ошибка передачи локального звука: '
+                        f'{type(playback_error).__name__}: {playback_error!r}'
                     )
 
             except Exception as exc:
-                if audio_stream is not None and playback_started:
-                    audio_stream.finish()
-                    if playback_done is not None:
-                        try:
-                            await playback_done
-                        except Exception:
-                            pass
                 if voice_client and original_send_audio_packet is not None:
                     voice_client.send_audio_packet = original_send_audio_packet
-                self.log(f'Ошибка озвучивания: {type(exc).__name__}: {exc}')
+                self.log(f'Ошибка локального озвучивания: {type(exc).__name__}: {exc}')
             finally:
+                if file_name:
+                    try:
+                        Path(file_name).unlink(missing_ok=True)
+                    except OSError as cleanup_error:
+                        self.log(f'Не удалось удалить временный WAV: {cleanup_error}')
                 self.queue.task_done()
 
     async def stop(self):
-        if self.worker:
-            self.worker.cancel()
-        if self.discord_task and not self.discord_task.done():
-            self.discord_task.cancel()
-        if self.start_watchdog and not self.start_watchdog.done():
-            self.start_watchdog.cancel()
+        for task in (
+            self.worker,
+            self.discord_task,
+            self.start_watchdog,
+            self.tts_load_task,
+            self.loop_watchdog_task,
+        ):
+            if task and not task.done():
+                task.cancel()
         if self.voice_client and self.voice_client.is_playing():
             self.voice_client.stop()
         if not self.client.is_closed():
