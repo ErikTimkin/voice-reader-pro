@@ -10,6 +10,8 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from huggingface_hub import HfApi, snapshot_download
 
 
@@ -148,6 +150,18 @@ def download_armenian_reference(root: Path, ffmpeg: Path) -> None:
         return
 
     session = requests.Session()
+    retry = Retry(
+        total=8,
+        connect=5,
+        read=5,
+        backoff_factor=1.0,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset({"GET"}),
+        respect_retry_after_header=True,
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
     session.headers.update({"User-Agent": "VoiceReaderPro-model-pack/1.0"})
     split_name = "generated"
     config = _dataset_config(session, split_name)
@@ -171,11 +185,16 @@ def download_armenian_reference(root: Path, ffmpeg: Path) -> None:
                 "length": 100,
             }
         )
-        response = session.get(url, timeout=90)
-        if response.status_code == 404 and offset == 0:
-            raise RuntimeError("The dataset viewer returned 404 for the Armenian train split.")
-        response.raise_for_status()
-        payload = response.json()
+        try:
+            response = session.get(url, timeout=90)
+            response.raise_for_status()
+            payload = response.json()
+        except requests.RequestException as exc:
+            print(
+                f"Dataset viewer failed at offset {offset}; skipping this page after retries: {exc}",
+                flush=True,
+            )
+            continue
         total_rows = payload.get("num_rows_total", total_rows)
 
         for wrapper in payload.get("rows", []):
@@ -263,7 +282,7 @@ def prepare_armenian(root: Path, ffmpeg: Path) -> None:
         "Model: mnjoyan/pocket-tts-armenian (tri_v1; Armenian + Russian + English).\n"
         "License declared by the model publisher: Creative Commons Attribution 4.0 (CC BY 4.0).\n"
         "Attribution: mnjoyan, https://huggingface.co/mnjoyan/pocket-tts-armenian\n"
-        "The packaged voice is conditioned on a short anonymized Common Voice Armenian train clip.\n",
+        "The packaged voice is conditioned on a short synthetic Armenian male audio sample.\n",
         encoding="utf-8",
     )
     (target / "REFERENCE_NOTICE.txt").write_text(
