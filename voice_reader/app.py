@@ -82,7 +82,7 @@ class App:
         self.start.configure(state='normal'); self.stop.configure(state='disabled'); self.status.set('Остановлено')
     def copy(self): self.root.clipboard_clear(); self.root.clipboard_append(self.link.get())
     def paste_from_clipboard(self, event=None):
-        \"\"\"Paste into the focused entry/text widget and suppress Tk's duplicate paste.\"\"\"
+        """Paste into the focused entry/text widget and suppress Tk's duplicate paste."""
         widget = self.root.focus_get()
         if not isinstance(widget, (tk.Entry, tk.Text, ttk.Entry)):
             return
