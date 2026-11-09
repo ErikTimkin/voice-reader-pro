@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from voice_reader.core import normalize_voice_key
+from voice_reader.local_tts import VOICE_PRESETS
 
 
 def main() -> None:
@@ -12,6 +13,8 @@ def main() -> None:
     assert normalize_voice_key("cute_girl") == "cute_girl"
     assert normalize_voice_key("armenian") == "armenian"
     assert normalize_voice_key("pop") == "pop"
+    assert VOICE_PRESETS["armenian"]["engine"] == "armenian"
+    assert VOICE_PRESETS["pop"]["engine"] == "teratts"
 
     try:
         normalize_voice_key("pudge")
