@@ -20,7 +20,7 @@ VOICE_PRESETS = {
         "ffmpeg_options": "-af volume=1.15",
     },
     "pudge": {
-        "label": "Пудж — глубокий басовый",
+        "label": "Низкий мужской (не оригинал Пуджа)",
         "speaker": "eugene",
         "ffmpeg_options": "-af bass=g=5,volume=1.2",
     },
