@@ -48,24 +48,43 @@ jobs:
           Invoke-WebRequest -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile tools/cloudflared.exe
           & (Join-Path $PWD 'tools/cloudflared.exe') --version
           if ($LASTEXITCODE -ne 0) { throw 'Bundled cloudflared failed its version check' }
+      - name: Download local Russian voice model
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force voices | Out-Null
+          Invoke-WebRequest -Uri 'https://models.silero.ai/models/tts/ru/v5_6_ru.pt' -OutFile voices/v5_6_ru.pt
+          $modelSize = (Get-Item voices/v5_6_ru.pt).Length
+          if ($modelSize -lt 50000000) { throw "Silero model download is incomplete: $modelSize bytes" }
+          Copy-Item licenses/SILERO_MODEL_NOTICE.txt voices/SILERO_MODEL_NOTICE.txt
+          Write-Host "Downloaded local Silero model: $modelSize bytes"
       - name: Check source
-        run: python -m compileall -q voice_reader
+        run: python -m compileall -q voice_reader tests
       - name: Verify DAVE 0.2 and Opus voice support
         run: python tests/dave_compat_smoke.py
-      - name: Test low-latency streaming and voice presets
-        run: python tests/voice_presets_smoke.py
+      - name: Test local Silero voices and event loop
+        run: python tests/silero_voice_smoke.py
       - name: Smoke-test PCM playback path
         run: python tests/voice_pipeline_smoke.py
       - name: Build EXE
         run: pyinstaller --noconfirm --clean build.spec
+      - name: Prepare offline voice folder
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist/voices | Out-Null
+          Copy-Item voices/v5_6_ru.pt dist/voices/v5_6_ru.pt -Force
+          Copy-Item voices/SILERO_MODEL_NOTICE.txt dist/voices/SILERO_MODEL_NOTICE.txt -Force
       - name: Confirm output
         shell: pwsh
         run: |
           if (!(Test-Path dist/VoiceReaderPro.exe)) { throw 'EXE was not generated' }
-          if ((Get-Item dist/VoiceReaderPro.exe).Length -lt 10MB) { throw 'EXE is unexpectedly small' }
+          if ((Get-Item dist/VoiceReaderPro.exe).Length -lt 100MB) { throw 'EXE is unexpectedly small for the local PyTorch runtime' }
+          if (!(Test-Path dist/voices/v5_6_ru.pt)) { throw 'Local Silero voice model was not copied beside the EXE' }
+          if ((Get-Item dist/voices/v5_6_ru.pt).Length -lt 50000000) { throw 'Local Silero model is unexpectedly small' }
       - uses: actions/upload-artifact@v4
         with:
-          name: VoiceReaderPro-Windows
-          path: dist/VoiceReaderPro.exe
+          name: VoiceReaderPro-Offline-Windows
+          path: |
+            dist/VoiceReaderPro.exe
+            dist/voices/
           if-no-files-found: error
           retention-days: 14
