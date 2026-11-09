@@ -11,6 +11,7 @@ import aiohttp
 from aiohttp import web
 import discord
 import edge_tts
+from edge_tts.exceptions import NoAudioReceived
 
 MAX_TEXT, MAX_QUEUE = 350, 20
 RATE_WINDOW, RATE_COUNT = 60, 5
@@ -218,10 +219,56 @@ class VoiceService:
                     continue
                 fd, file_name = tempfile.mkstemp(suffix='.mp3')
                 os.close(fd)
-                self.log(f'Готовлю озвучивание: {len(text)} символ(ов), голос {self.voice}.')
-                await edge_tts.Communicate(text, self.voice).save(file_name)
-                file_size = Path(file_name).stat().st_size
-                self.log(f'Edge TTS создал аудиофайл: {file_size} байт.')
+                self.log(f'Готовлю озвучивание: {len(text)} символ(ов), основной голос {self.voice}.')
+
+                # Microsoft Edge TTS can intermittently close a successful WebSocket
+                # without returning any audio. Retry and fall back to another Russian voice.
+                voices_to_try = [self.voice]
+                fallback_voice = "ru-RU-SvetlanaNeural"
+                if fallback_voice != self.voice:
+                    voices_to_try.append(fallback_voice)
+
+                synthesized = False
+                last_tts_error = None
+                for voice_index, candidate_voice in enumerate(voices_to_try):
+                    for attempt in range(1, 3):
+                        try:
+                            if voice_index == 0 and attempt == 1:
+                                self.log(f'Запрашиваю озвучивание голосом {candidate_voice}.')
+                            elif voice_index == 0:
+                                self.log(f'Edge TTS не прислал звук. Повторная попытка {attempt}/2 для {candidate_voice}…')
+                            else:
+                                self.log(f'Пробую запасной русский голос {candidate_voice}…')
+
+                            await edge_tts.Communicate(text, candidate_voice).save(file_name)
+                            file_size = Path(file_name).stat().st_size
+                            if file_size < 256:
+                                raise NoAudioReceived(f'Edge TTS returned an unusually small audio file ({file_size} bytes).')
+
+                            self.log(f'Edge TTS создал аудиофайл: {file_size} байт, голос {candidate_voice}.')
+                            synthesized = True
+                            break
+                        except NoAudioReceived as exc:
+                            last_tts_error = exc
+                            self.log(f'Edge TTS не вернул аудио ({candidate_voice}, попытка {attempt}/2): {exc}')
+                            if attempt < 2:
+                                await asyncio.sleep(2.5 * attempt)
+                        except Exception as exc:
+                            last_tts_error = exc
+                            self.log(f'Ошибка Edge TTS ({candidate_voice}): {type(exc).__name__}: {exc}')
+                            if attempt < 2:
+                                await asyncio.sleep(2.5 * attempt)
+                    if synthesized:
+                        break
+
+                if not synthesized:
+                    self.log(
+                        'Не удалось получить звук ни основным, ни запасным голосом. '
+                        f'Последняя ошибка: {type(last_tts_error).__name__ if last_tts_error else "Unknown"}: {last_tts_error}. '
+                        'Discord и FFmpeg здесь ещё не задействованы.'
+                    )
+                    continue
+
                 if not self.voice_client or not self.voice_client.is_connected():
                     self.ready.clear()
                     self.log('Голосовое соединение оборвалось до запуска FFmpeg.')
