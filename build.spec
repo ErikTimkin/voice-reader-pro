@@ -25,12 +25,14 @@ a = Analysis(
         (str(root / "tools" / "cloudflared.exe"), "."),
     ] + davey_binaries + discord_binaries + torch_binaries + numpy_binaries
       + pocket_binaries + onnx_binaries + sentencepiece_binaries + yaml_binaries
-      + scipy_binaries + safetensors_binaries,
+      + scipy_binaries + safetensors_binaries + tokenizers_binaries
+      + huggingface_binaries + pydantic_binaries,
     datas=[
         (str(root / "voice_reader" / "static"), "voice_reader/static"),
     ] + davey_datas + discord_datas + torch_datas + numpy_datas
       + pocket_datas + onnx_datas + sentencepiece_datas + yaml_datas
-      + scipy_datas + safetensors_datas,
+      + scipy_datas + safetensors_datas + tokenizers_datas
+      + huggingface_datas + pydantic_datas,
     hiddenimports=[
         "discord.opus",
         "discord.voice_client",
@@ -39,7 +41,8 @@ a = Analysis(
         "numpy",
     ] + davey_hiddenimports + discord_hiddenimports + torch_hiddenimports + numpy_hiddenimports
       + pocket_hiddenimports + onnx_hiddenimports + sentencepiece_hiddenimports + yaml_hiddenimports
-      + scipy_hiddenimports + safetensors_hiddenimports,
+      + scipy_hiddenimports + safetensors_hiddenimports + tokenizers_hiddenimports
+      + huggingface_hiddenimports + pydantic_hiddenimports,
     hookspath=[],
     excludes=["torch.distributed", "torch.testing", "torch.utils.tensorboard"],
     noarchive=False,
