@@ -57,6 +57,8 @@ jobs:
           if ($modelSize -lt 50000000) { throw "Silero model download is incomplete: $modelSize bytes" }
           Copy-Item licenses/SILERO_MODEL_NOTICE.txt voices/SILERO_MODEL_NOTICE.txt
           Write-Host "Downloaded local Silero model: $modelSize bytes"
+      - name: Download and prepare additional offline voices
+        run: python tools/prepare_additional_voices.py --voices-dir voices --ffmpeg tools/ffmpeg.exe
       - name: Check source
         run: python -m compileall -q voice_reader tests
       - name: Test Russian number pronunciation
@@ -67,6 +69,8 @@ jobs:
         run: python tests/dave_compat_smoke.py
       - name: Test local Silero voices and event loop
         run: python tests/silero_voice_smoke.py
+      - name: Test Armenian accent and young pop voices
+        run: python tests/additional_voice_smoke.py
       - name: Smoke-test PCM playback path
         run: python tests/voice_pipeline_smoke.py
       - name: Build EXE
@@ -77,6 +81,15 @@ jobs:
           New-Item -ItemType Directory -Force dist/VoiceReaderPro/voices | Out-Null
           Copy-Item voices/v5_6_ru.pt dist/VoiceReaderPro/voices/v5_6_ru.pt -Force
           Copy-Item voices/SILERO_MODEL_NOTICE.txt dist/VoiceReaderPro/voices/SILERO_MODEL_NOTICE.txt -Force
+
+          New-Item -ItemType Directory -Force dist/VoiceReaderPro/voices/teratts | Out-Null
+          Copy-Item -Path voices/teratts/* -Destination dist/VoiceReaderPro/voices/teratts -Recurse -Force
+
+          New-Item -ItemType Directory -Force dist/VoiceReaderPro/voices/armenian | Out-Null
+          Copy-Item -Path voices/armenian/* -Destination dist/VoiceReaderPro/voices/armenian -Recurse -Force
+
+          New-Item -ItemType Directory -Force dist/VoiceReaderPro/samples | Out-Null
+          Copy-Item tests/voice-samples/*.wav dist/VoiceReaderPro/samples/ -Force
       - name: Confirm output
         shell: pwsh
         run: |
@@ -84,6 +97,28 @@ jobs:
           if ((Get-Item dist/VoiceReaderPro/VoiceReaderPro.exe).Length -lt 1MB) { throw 'EXE launcher is unexpectedly small' }
           if (!(Test-Path dist/VoiceReaderPro/voices/v5_6_ru.pt)) { throw 'Local Silero voice model was not copied beside the EXE' }
           if ((Get-Item dist/VoiceReaderPro/voices/v5_6_ru.pt).Length -lt 50000000) { throw 'Local Silero model is unexpectedly small' }
+
+          $extraFiles = @(
+            'voices/teratts/teratts.py',
+            'voices/teratts/models/text_encoder.onnx',
+            'voices/teratts/models/duration_predictor.onnx',
+            'voices/teratts/models/sampler_distilled_cfg3_8step.onnx',
+            'voices/teratts/models/vocoder.onnx',
+            'voices/teratts/styles/ru_m5/style_ttl.npy',
+            'voices/teratts/styles/ru_m5/style_dp.npy',
+            'voices/armenian/armenian_tri.yaml',
+            'voices/armenian/armenian_reference.wav',
+            'voices/armenian/tri_v1/model.safetensors',
+            'voices/armenian/tri_v1/tokenizer_tri.model',
+            'voices/armenian/configs/hy_text.py',
+            'samples/young-pop-ru.wav',
+            'samples/armenian-accent-ru.wav'
+          )
+          foreach ($relative in $extraFiles) {
+            if (!(Test-Path (Join-Path 'dist/VoiceReaderPro' $relative))) {
+              throw "Additional voice package is missing: $relative"
+            }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: VoiceReaderPro-Offline-Windows
