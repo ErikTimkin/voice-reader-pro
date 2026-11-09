@@ -10,6 +10,8 @@ from voice_reader.core import normalize_voice_key
 def main() -> None:
     assert normalize_voice_key("normal") == "normal"
     assert normalize_voice_key("cute_girl") == "cute_girl"
+    assert normalize_voice_key("armenian") == "armenian"
+    assert normalize_voice_key("pop") == "pop"
 
     try:
         normalize_voice_key("pudge")
@@ -22,6 +24,10 @@ def main() -> None:
     required = [
         'data-voice="normal"',
         'data-voice="cute_girl"',
+        'data-voice="armenian"',
+        'data-voice="pop"',
+        'Армянский акцент',
+        'Молодой поп-голос',
         'Пудж из Dota 2',
         "event.key === 'Enter'",
         "!event.shiftKey",
