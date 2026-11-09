@@ -16,8 +16,9 @@ def require_source(obj, fragments, label):
 
 
 def main():
-    if version("discord.py") != "2.7.1":
-        raise AssertionError(f"Unexpected discord.py version: {version('discord.py')}")
+    discord_version = version("discord.py")
+    if not discord_version.startswith("2.8.0a5438+g283cafbd"):
+        raise AssertionError(f"Unexpected discord.py build (expected pinned DAVE commit): {discord_version}")
     if version("davey") != "0.2.0":
         raise AssertionError(f"Unexpected davey version: {version('davey')}")
     if version("PyNaCl") != "1.6.0":
@@ -62,7 +63,7 @@ def main():
 
     print(
         "DAVE compatibility smoke test passed:",
-        f"discord.py={version('discord.py')}",
+        f"discord.py={discord_version}",
         f"davey={version('davey')}",
         f"PyNaCl={version('PyNaCl')}",
         f"libopus_loaded={discord.opus.is_loaded()}",
