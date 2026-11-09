@@ -12,10 +12,17 @@ from pathlib import Path
 import aiohttp
 from aiohttp import web
 import discord
-from voice_reader.local_tts import LocalSileroTTS, resolve_voice_profile
+from voice_reader.local_tts import LocalSileroTTS, VOICE_PRESETS, resolve_voice_profile
 
 MAX_TEXT, MAX_QUEUE = 350, 20
 RATE_WINDOW, RATE_COUNT = 60, 5
+
+
+def normalize_voice_key(value, default="normal"):
+    key = str(value if value is not None else default).strip()
+    if key not in VOICE_PRESETS:
+        raise ValueError("Неизвестный голос. Обновите страницу и выберите один из доступных вариантов.")
+    return key
 
 class DiagnosticFFmpegPCMAudio(discord.FFmpegPCMAudio):
     """FFmpeg-to-PCM source that reports decoded frame count and signal level."""
@@ -277,7 +284,12 @@ class VoiceService:
             return web.json_response({'message': 'Слишком много сообщений. Подождите минуту.'}, status=429)
         try:
             payload = await request.json()
+            if not isinstance(payload, dict):
+                raise ValueError("Expected JSON object")
             text = payload.get('text', '')
+            requested_voice = normalize_voice_key(payload.get('voice'), self.voice)
+        except ValueError as exc:
+            return web.json_response({'message': str(exc) or 'Некорректный запрос.'}, status=400)
         except Exception:
             return web.json_response({'message': 'Некорректный запрос.'}, status=400)
         text = re.sub(r'\s+', ' ', str(text)).strip()
@@ -287,7 +299,7 @@ class VoiceService:
             return web.json_response({'message': 'Очередь заполнена. Попробуйте позже.'}, status=429)
 
         enqueued_at = time.perf_counter()
-        await self.queue.put((text, enqueued_at))
+        await self.queue.put((text, requested_voice, enqueued_at))
         queue_size = self.queue.qsize()
         elapsed_ms = (time.perf_counter() - request_started) * 1000
         self.log(
@@ -303,10 +315,13 @@ class VoiceService:
     async def play_worker(self):
         while True:
             item = await self.queue.get()
-            if isinstance(item, tuple):
+            if isinstance(item, tuple) and len(item) == 3:
+                text, selected_voice, enqueued_at = item
+            elif isinstance(item, tuple) and len(item) == 2:
                 text, enqueued_at = item
+                selected_voice = self.voice
             else:
-                text, enqueued_at = item, time.perf_counter()
+                text, selected_voice, enqueued_at = item, self.voice, time.perf_counter()
 
             file_name = None
             done = None
@@ -327,10 +342,10 @@ class VoiceService:
                     self.log(f'Озвучивание недоступно: {self.tts_error}')
                     continue
 
-                profile = resolve_voice_profile(self.voice)
+                profile = resolve_voice_profile(selected_voice)
                 self.log(
                     f'Локальная озвучка: {profile["label"]}; '
-                    f'диктор Silero={profile["speaker"]}.'
+                    f'диктор Silero={profile["speaker"]}; выбор сайта={selected_voice}.'
                 )
 
                 fd, file_name = tempfile.mkstemp(suffix='.wav', prefix='voice-reader-')
