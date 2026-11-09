@@ -20,8 +20,28 @@ jobs:
         run: |
           choco install ffmpeg --no-progress --yes
           New-Item -ItemType Directory -Force tools | Out-Null
-          Copy-Item (Get-Command ffmpeg.exe).Source tools/ffmpeg.exe
+
+          # Do NOT copy the Chocolatey PATH shim from chocolatey/bin.
+          # Copy the real ffmpeg executable from the package's tools directory.
+          $ffmpegPath = Join-Path $env:ChocolateyInstall 'lib/ffmpeg/tools/ffmpeg/bin/ffmpeg.exe'
+          if (!(Test-Path $ffmpegPath)) {
+            throw "Real FFmpeg executable not found at: $ffmpegPath"
+          }
+          & $ffmpegPath -version | Select-Object -First 1
+          if ($LASTEXITCODE -ne 0) { throw 'Real FFmpeg failed its version check' }
+          Copy-Item $ffmpegPath tools/ffmpeg.exe -Force
+
+          # Verify that the copied executable can create a valid Ogg/Opus file.
+          $testAudio = Join-Path $PWD 'tools/ffmpeg-smoke-test.ogg'
+          & (Join-Path $PWD 'tools/ffmpeg.exe') -hide_banner -loglevel error -f lavfi -i 'sine=frequency=440:duration=0.25' -c:a libopus -f opus -y $testAudio
+          if ($LASTEXITCODE -ne 0 -or !(Test-Path $testAudio)) { throw 'Bundled FFmpeg Opus smoke test failed' }
+          $magic = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($testAudio)[0..3])
+          if ($magic -ne 'OggS') { throw "Bundled FFmpeg produced invalid Ogg header: $magic" }
+          Remove-Item $testAudio -Force
+
           Invoke-WebRequest -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile tools/cloudflared.exe
+          & (Join-Path $PWD 'tools/cloudflared.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled cloudflared failed its version check' }
       - name: Check source
         run: python -m compileall -q voice_reader
       - name: Verify DAVE voice support is installed
