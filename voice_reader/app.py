@@ -90,7 +90,7 @@ class App:
                 typ, msg = self.events.get_nowait()
                 if typ == 'log':
                     self.log.configure(state='normal')
-                    self.log.insert('end', msg + '\\n')
+                    self.log.insert('end', msg + '\n')
                     self.log.see('end')
                     self.log.configure(state='disabled')
                 elif typ == 'url':
@@ -146,7 +146,7 @@ class App:
                 self.emit(line.strip())
                 if 'trycloudflare.com' in line:
                     import re
-                    url = re.search(r'https://[^\\s]+trycloudflare\\.com', line)
+                    url = re.search(r'https://[^\s]+trycloudflare\.com', line)
                     if url:
                         self.events.put(('url', url.group(0)))
         except Exception as e:
