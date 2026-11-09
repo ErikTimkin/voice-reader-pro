@@ -12,3 +12,5 @@ onnxruntime==1.23.2
 PyYAML==6.0.3
 pyarrow==22.0.0
 transformers==5.14.0
+huggingface-hub==1.33.0
+tokenizers==0.22.2
