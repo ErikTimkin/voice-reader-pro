@@ -23,7 +23,7 @@ async def main_async() -> None:
     samples = ROOT / "tests" / "voice-samples"
     samples.mkdir(parents=True, exist_ok=True)
 
-    pop = TeraPopTTS(ROOT / "voices" / "teratts", print)
+    pop = TeraPopTTS(ROOT / "voices" / "teratts", lambda _message: None)
     pop_path = samples / "young-pop-ru.wav"
     try:
         size, duration = await asyncio.to_thread(
@@ -42,7 +42,7 @@ async def main_async() -> None:
     armenian_assets = ROOT / "voices" / "armenian"
     if not (armenian_assets / "configs" / "hy_text.py").is_file():
         raise AssertionError("Armenian text normalizer is missing from configs/hy_text.py")
-    armenian = ArmenianAccentTTS(armenian_assets, print)
+    armenian = ArmenianAccentTTS(armenian_assets, lambda _message: None)
     armenian_path = samples / "armenian-accent-ru.wav"
     try:
         size, duration = await asyncio.to_thread(
