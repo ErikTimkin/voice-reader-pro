@@ -61,6 +61,11 @@ class App:
         ttk.Label(box, textvariable=self.status).pack(anchor='w')
         self.log = tk.Text(box, height=8, state='disabled')
         self.log.pack(fill='both', expand=True)
+        # Per-entry paste handlers: no global binding, so a paste is applied once.
+        for entry in [*self.fields.values(), self.link]:
+            entry.bind('<Control-KeyPress>', self.handle_entry_control)
+            entry.bind('<Shift-Insert>', self.paste_entry)
+            entry.bind('<Button-3>', self.show_entry_menu)
         # Let Tkinter's native class binding handle Ctrl+V exactly once.
         root.after(200, self.drain)
         root.protocol('WM_DELETE_WINDOW', self.close)
@@ -168,6 +173,52 @@ class App:
     def copy(self):
         self.root.clipboard_clear()
         self.root.clipboard_append(self.link.get())
+
+    def paste_entry(self, event=None):
+        widget = event.widget if event is not None else self.root.focus_get()
+        if widget is None:
+            return 'break'
+        try:
+            value = self.root.clipboard_get()
+        except tk.TclError:
+            return 'break'
+        try:
+            if widget.selection_present():
+                widget.delete('sel.first', 'sel.last')
+        except (tk.TclError, AttributeError):
+            pass
+        try:
+            widget.insert('insert', value)
+        except tk.TclError:
+            pass
+        return 'break'
+
+    def handle_entry_control(self, event):
+        # Windows keycode 86 is the physical V key, including Russian keyboard layout.
+        if event.state & 0x4 and event.keycode == 86:
+            return self.paste_entry(event)
+        return None
+
+    def show_entry_menu(self, event):
+        widget = event.widget
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label='Вставить', command=lambda: self.paste_entry_for(widget))
+        menu.add_command(label='Копировать', command=lambda: widget.event_generate('<<Copy>>'))
+        menu.add_command(label='Вырезать', command=lambda: widget.event_generate('<<Cut>>'))
+        menu.add_separator()
+        menu.add_command(label='Выделить всё', command=lambda: widget.select_range(0, 'end'))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+        return 'break'
+
+    def paste_entry_for(self, widget):
+        class PasteEvent:
+            pass
+        event = PasteEvent()
+        event.widget = widget
+        self.paste_entry(event)
 
     def close(self):
         self.stop_service()
