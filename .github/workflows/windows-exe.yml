@@ -50,8 +50,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Bundled cloudflared failed its version check' }
       - name: Check source
         run: python -m compileall -q voice_reader
-      - name: Verify DAVE and Opus voice support
-        run: python -c "import discord, davey; from importlib.metadata import version; enc=discord.opus.Encoder(signal_type='voice'); packet=enc.encode(bytes(discord.opus.Encoder.FRAME_SIZE), discord.opus.Encoder.SAMPLES_PER_FRAME); assert packet; print('discord.py', discord.__version__); print('davey', version('davey')); print('libopus loaded', discord.opus.is_loaded(), 'encoded bytes', len(packet))"
+      - name: Verify DAVE 0.2 and Opus voice support
+        run: python tests/dave_compat_smoke.py
       - name: Smoke-test PCM playback path
         run: python tests/voice_pipeline_smoke.py
       - name: Build EXE
