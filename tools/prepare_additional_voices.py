@@ -10,10 +10,10 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 import requests
-from huggingface_hub import snapshot_download
+from huggingface_hub import HfApi, snapshot_download
 
 
-ARMENIAN_DATASET = "ErikMkrtchyan/Hy-Generated-audio-data-with-cv20.0"
+ARMENIAN_DATASET = "ErikMkrtchyan/Hy-Generated-audio-data-2"
 ARMENIAN_MODEL = "mnjoyan/pocket-tts-armenian"
 TERA_MODEL = "TeraSpace/TeraTTSv2"
 
@@ -21,11 +21,13 @@ TERA_MODEL = "TeraSpace/TeraTTSv2"
 def download_tera(root: Path) -> None:
     target = root / "teratts"
     target.mkdir(parents=True, exist_ok=True)
-    print("Downloading TeraTTSv2 distilled Russian male voice (ru_m5)…", flush=True)
+    api = HfApi()
+    revision = api.model_info(TERA_MODEL).sha
+    print(f"Downloading pinned TeraTTSv2 revision {revision} (Russian male voice ru_m5)…", flush=True)
     snapshot_download(
         repo_id=TERA_MODEL,
         repo_type="model",
-        revision="main",
+        revision=revision,
         local_dir=str(target),
         allow_patterns=[
             "teratts.py",
@@ -65,7 +67,7 @@ def download_tera(root: Path) -> None:
     print("TeraTTSv2 files verified.", flush=True)
 
 
-def _dataset_config(session: requests.Session) -> str:
+def _dataset_config(session: requests.Session, target_split: str) -> str:
     url = "https://datasets-server.huggingface.co/splits?" + urlencode(
         {"dataset": ARMENIAN_DATASET}
     )
@@ -73,10 +75,10 @@ def _dataset_config(session: requests.Session) -> str:
     response.raise_for_status()
     payload = response.json()
     for split in payload.get("splits", []):
-        if split.get("split") == "train":
+        if split.get("split") == target_split:
             return split["config"]
     raise RuntimeError(
-        "The Common Voice Armenian dataset viewer did not expose the train split: "
+        f"The synthetic Armenian dataset viewer did not expose the {target_split!r} split: "
         + json.dumps(payload)[:1200]
     )
 
@@ -147,19 +149,24 @@ def download_armenian_reference(root: Path, ffmpeg: Path) -> None:
 
     session = requests.Session()
     session.headers.update({"User-Agent": "VoiceReaderPro-model-pack/1.0"})
-    config = _dataset_config(session)
-    print(f"Looking for a 5–10 second male Common Voice Armenian clip (config={config})…", flush=True)
+    split_name = "generated"
+    config = _dataset_config(session, split_name)
+    print(
+        f"Looking for a 5–10 second synthetic male Armenian voice sample "
+        f"(config={config}, split={split_name})…",
+        flush=True,
+    )
 
     # The dataset viewer supports 100 rows per request. We only retain the anonymized
     # audio samples, never the speaker's name, client_id, or other identifying metadata.
     total_rows = None
     candidates = 0
-    for offset in range(0, 9300, 100):
+    for offset in range(0, 100_000, 100):
         url = "https://datasets-server.huggingface.co/rows?" + urlencode(
             {
                 "dataset": ARMENIAN_DATASET,
                 "config": config,
-                "split": "train",
+                "split": split_name,
                 "offset": offset,
                 "length": 100,
             }
@@ -256,13 +263,19 @@ def prepare_armenian(root: Path, ffmpeg: Path) -> None:
         encoding="utf-8",
     )
     (target / "REFERENCE_NOTICE.txt").write_text(
-        "Reference audio source: ErikMkrtchyan/Hy-Generated-audio-data-with-cv20.0, train split.\n"
-        "Dataset card declares CC0 1.0. The reference is a public Common Voice 20.0 Armenian clip.\n"
-        "VoiceReader Pro retains only the short audio crop; speaker IDs and personal metadata are not packaged.\n"
-        "Dataset: https://huggingface.co/datasets/ErikMkrtchyan/Hy-Generated-audio-data-with-cv20.0\n",
+        "Reference audio source: ErikMkrtchyan/Hy-Generated-audio-data-2, generated split.\n"
+        "Dataset card declares CC0 1.0. The selected voice is a synthetic Armenian male sample, not a real speaker recording.\n"
+        "VoiceReader Pro retains only the short audio crop; speaker IDs and other metadata are not packaged.\n"
+        "Dataset: https://huggingface.co/datasets/ErikMkrtchyan/Hy-Generated-audio-data-2\n",
         encoding="utf-8",
     )
-    print("Armenian Pocket TTS model, Russian normalizer and reference clip verified.", flush=True)
+    (target / "POCKET_TTS_LICENSE.txt").write_text(
+        "Pocket TTS upstream software is licensed under the MIT License.\n"
+        "Copyright (c) Kyutai.\n"
+        "https://github.com/kyutai-labs/pocket-tts\n",
+        encoding="utf-8",
+    )
+    print("Armenian Pocket TTS model, Russian normalizer and synthetic reference clip verified.", flush=True)
 
 
 def main() -> None:
