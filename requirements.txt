@@ -6,3 +6,4 @@ numpy==2.2.3
 PyNaCl==1.6.0
 PyInstaller==6.13.0
 torch==2.6.0+cpu
+num2words==0.5.14
