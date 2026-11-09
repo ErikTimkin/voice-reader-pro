@@ -25,9 +25,9 @@ class VoiceService:
         self.voice_client = None
         self.ready = asyncio.Event()
         self.visitors = defaultdict(deque)
-        self.client.event(self._on_ready)
+        self.client.event(self.on_ready)
 
-    async def _on_ready(self):
+    async def on_ready(self):
         guild = self.client.get_guild(self.guild_id)
         if guild is None:
             self.log('Бот вошёл в Discord, но не видит сервер. Проверьте ID сервера и приглашение бота.')
