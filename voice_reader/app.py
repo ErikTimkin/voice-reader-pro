@@ -9,7 +9,13 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, ttk
 import keyring
-from voice_reader.core import VoiceService
+from voice_reader.core import (
+    VoiceService,
+    VOICE_PRESETS,
+    VOICE_PRESET_LABELS,
+    VOICE_LABEL_TO_PRESET,
+    LEGACY_VOICE_IDS,
+)
 
 APP_NAME, TOKEN_KEY = 'Voice Reader Pro', 'discord-token'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
@@ -38,15 +44,23 @@ class App:
             ('Токен Discord-бота', 'token', '•'),
             ('ID сервера', 'guild_id', ''),
             ('ID голосового канала', 'channel_id', ''),
-            ('Голос Edge TTS', 'voice', '')
+            ('Голос озвучивания', 'voice', '')
         ]:
             ttk.Label(box, text=label).pack(anchor='w')
-            e = ttk.Entry(box, show=show)
+            if key == 'voice':
+                e = ttk.Combobox(
+                    box,
+                    values=list(VOICE_PRESET_LABELS.values()),
+                    state='readonly',
+                )
+                configured_voice = cfg.get('voice', 'dmitry')
+                preset_key = LEGACY_VOICE_IDS.get(configured_voice, configured_voice)
+                e.set(VOICE_PRESET_LABELS.get(preset_key, VOICE_PRESETS['dmitry']['label']))
+            else:
+                e = ttk.Entry(box, show=show)
+                e.insert(0, cfg.get(key, ''))
             e.pack(fill='x', pady=(0, 8))
-            e.insert(0, cfg.get(key, ''))
             self.fields[key] = e
-        self.fields['voice'].delete(0, 'end')
-        self.fields['voice'].insert(0, cfg.get('voice', 'ru-RU-DmitryNeural'))
         row = ttk.Frame(box)
         row.pack(fill='x', pady=8)
         self.start = ttk.Button(row, text='Запустить', command=self.start_service)
@@ -82,8 +96,13 @@ class App:
         return cfg
 
     def save(self):
-        CONFIG.write_text(json.dumps({k: self.fields[k].get().strip()
-            for k in ('guild_id', 'channel_id', 'voice')}, ensure_ascii=False, indent=2), 'utf-8')
+        settings = {
+            k: self.fields[k].get().strip()
+            for k in ('guild_id', 'channel_id')
+        }
+        selected_label = self.fields['voice'].get().strip()
+        settings['voice'] = VOICE_LABEL_TO_PRESET.get(selected_label, 'dmitry')
+        CONFIG.write_text(json.dumps(settings, ensure_ascii=False, indent=2), 'utf-8')
         keyring.set_password(APP_NAME, TOKEN_KEY, self.fields['token'].get().strip())
 
     def emit(self, msg):
@@ -127,8 +146,10 @@ class App:
         self.start.configure(state='disabled')
         self.stop.configure(state='normal')
         self.status.set('Запуск…')
+        selected_voice_label = self.fields['voice'].get().strip()
+        voice_preset = VOICE_LABEL_TO_PRESET.get(selected_voice_label, 'dmitry')
         self.thread = threading.Thread(target=self.run,
-            args=(token, guild, channel, self.fields['voice'].get().strip(), ffmpeg, cloudflared), daemon=True)
+            args=(token, guild, channel, voice_preset, ffmpeg, cloudflared), daemon=True)
         self.thread.start()
 
     def run(self, *args):
