@@ -30,7 +30,7 @@ def main():
     )
     require_source(
         VoiceConnectionState.reinit_dave_session,
-        ["dave_pending_transitions.clear", "get_key_package", "get_serialized_key_package"],
+        ["dave_pending_transitions.clear", "get_serialized_key_package"],
         "VoiceConnectionState.reinit_dave_session",
     )
     require_source(
