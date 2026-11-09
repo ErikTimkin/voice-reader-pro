@@ -35,7 +35,8 @@ jobs:
           $testAudio = Join-Path $PWD 'tools/ffmpeg-smoke-test.ogg'
           & (Join-Path $PWD 'tools/ffmpeg.exe') -hide_banner -loglevel error -f lavfi -i 'sine=frequency=440:duration=0.25' -c:a libopus -f opus -y $testAudio
           if ($LASTEXITCODE -ne 0 -or !(Test-Path $testAudio)) { throw 'Bundled FFmpeg Opus smoke test failed' }
-          $magic = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($testAudio)[0..3])
+          $testBytes = [System.IO.File]::ReadAllBytes($testAudio)
+          $magic = [System.Text.Encoding]::ASCII.GetString($testBytes[0..3])
           if ($magic -ne 'OggS') { throw "Bundled FFmpeg produced invalid Ogg header: $magic" }
           Remove-Item $testAudio -Force
 
