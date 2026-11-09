@@ -1,150 +1,314 @@
 <!doctype html>
 <html lang="ru">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#090d18">
-<title>Voice Reader Pro</title>
-<style>
-:root{color-scheme:dark;--bg:#090d18;--line:rgba(148,163,184,.16);--text:#eef3ff;--muted:#91a0b8;--green:#45d6a0}
-*{box-sizing:border-box}
-body{margin:0;min-height:100vh;color:var(--text);font:15px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:radial-gradient(ellipse at 12% 0%,rgba(92,91,210,.23),transparent 34rem),radial-gradient(ellipse at 88% 18%,rgba(38,133,190,.15),transparent 30rem),var(--bg)}
-button,textarea{font:inherit}
-.page{width:min(100% - 32px,920px);margin:0 auto;padding:34px 0 48px}
-.topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:58px}
-.brand{display:flex;align-items:center;gap:12px;font-weight:750;letter-spacing:-.03em;font-size:17px}
-.brand-mark{width:38px;height:38px;display:grid;place-items:center;border-radius:13px;color:white;background:linear-gradient(140deg,#8a7cff,#4ea7fb);box-shadow:0 8px 28px rgba(111,116,255,.34)}
-.brand-mark svg{width:22px;height:22px}
-.local-pill{display:flex;align-items:center;gap:8px;border:1px solid rgba(69,214,160,.24);padding:7px 11px;border-radius:999px;color:#a7f2d5;background:rgba(28,145,107,.09);font-size:12px;font-weight:650;white-space:nowrap}
-.dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 12px rgba(69,214,160,.65)}
-.intro{margin-bottom:27px}
-.eyebrow{color:#a99fff;text-transform:uppercase;letter-spacing:.16em;font-size:11px;font-weight:800;margin-bottom:11px}
-h1{margin:0;font-size:clamp(32px,6vw,48px);line-height:1.08;letter-spacing:-.055em;font-weight:780}
-.subtitle{max-width:620px;color:var(--muted);margin:14px 0 0;font-size:16px}
-.panel{border:1px solid var(--line);border-radius:24px;padding:25px;background:linear-gradient(160deg,rgba(23,32,53,.96),rgba(15,22,37,.96));box-shadow:0 28px 80px rgba(0,0,0,.38);backdrop-filter:blur(18px)}
-.section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:15px}
-.section-title{display:flex;align-items:center;gap:9px;font-weight:720;font-size:15px}
-.section-title svg{width:18px;height:18px;color:#a99fff}
-.hint{color:#8391aa;font-size:12px}
-.voice-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:23px}
-.voice-card{text-align:left;position:relative;min-height:116px;padding:15px;color:var(--text);border-radius:17px;border:1px solid var(--line);background:rgba(8,14,27,.58);cursor:pointer;transition:.18s ease}
-.voice-card:hover:not(:disabled){transform:translateY(-2px);border-color:rgba(162,151,255,.55);background:rgba(76,72,150,.13)}
-.voice-card.selected{border-color:#9488ff;background:linear-gradient(140deg,rgba(126,111,255,.18),rgba(65,135,215,.10));box-shadow:inset 0 0 0 1px rgba(148,136,255,.18)}
-.voice-card:focus-visible,.send:focus-visible,textarea:focus-visible{outline:2px solid #a99fff;outline-offset:3px}
-.voice-card:disabled{cursor:not-allowed;opacity:.72;background:rgba(8,14,27,.36)}
-.voice-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:13px}
-.voice-icon{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:rgba(148,136,255,.13);font-size:18px}
-.voice-card.pink .voice-icon{background:rgba(239,114,180,.13)}
-.voice-card.disabled .voice-icon{background:rgba(148,163,184,.10)}
-.check{width:18px;height:18px;display:grid;place-items:center;border:1px solid #596780;border-radius:50%;color:transparent;font-size:11px}
-.selected .check{color:white;background:#8c7dff;border-color:#8c7dff}
-.voice-name{font-size:14px;font-weight:720;display:block}
-.voice-desc{color:var(--muted);font-size:12px;margin-top:3px;display:block}
-.pending{display:inline-block;margin-top:7px;color:#d7c49a;font-size:10px;letter-spacing:.02em}
-.composer{border:1px solid rgba(148,163,184,.19);background:#0c1424;border-radius:17px;padding:15px 16px 12px;transition:border-color .18s ease,box-shadow .18s ease}
-.composer:focus-within{border-color:rgba(147,134,255,.6);box-shadow:0 0 0 4px rgba(131,115,255,.09)}
-textarea{display:block;width:100%;min-height:125px;resize:vertical;color:var(--text);background:transparent;border:0;outline:0;padding:2px 1px;font-size:16px;line-height:1.6}
-textarea::placeholder{color:#687791}
-.composer-foot{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-top:7px;color:#7f8da5;font-size:12px}
-.send-row{display:flex;align-items:center;gap:12px;margin-top:16px}
-.send{min-width:160px;display:inline-flex;justify-content:center;align-items:center;gap:9px;padding:13px 20px;border:0;border-radius:13px;color:white;font-weight:750;cursor:pointer;background:linear-gradient(110deg,#8677ff,#548ff5);box-shadow:0 10px 24px rgba(99,111,242,.24);transition:filter .18s ease,transform .18s ease}
-.send:hover:not(:disabled){filter:brightness(1.08);transform:translateY(-1px)}
-.send:disabled{opacity:.55;cursor:wait;box-shadow:none}
-.send svg{width:17px;height:17px}
-.send-hint{color:#7f8da5;font-size:12px}
-.notice{min-height:24px;margin-top:15px;color:#a8b6ca;font-size:13px;display:flex;align-items:center;gap:8px}
-.notice.error{color:#ff9aab}.notice.success{color:#85e7c2}
-.spinner{width:13px;height:13px;border:2px solid rgba(255,255,255,.2);border-top-color:#a99fff;border-radius:50%;animation:spin .7s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-.footer{display:flex;justify-content:space-between;gap:12px;color:#65728a;font-size:11px;margin-top:18px;padding:0 4px}
-@media(max-width:680px){.page{width:min(100% - 22px,560px);padding-top:20px}.topbar{margin-bottom:40px}.panel{padding:17px;border-radius:20px}.voice-grid{grid-template-columns:1fr}.voice-card{min-height:86px}.voice-top{margin-bottom:8px}.send-row{align-items:flex-start;flex-direction:column}.send{width:100%}.footer{flex-direction:column}}
-@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f5f7">
+  <title>Voice Reader Pro</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --page: #f5f5f7;
+      --surface: rgba(255,255,255,.86);
+      --surface-solid: #fff;
+      --ink: #1d1d1f;
+      --secondary: #6e6e73;
+      --tertiary: #929298;
+      --line: rgba(29,29,31,.09);
+      --blue: #0071e3;
+      --blue-hover: #0077ed;
+      --green: #248a55;
+      --shadow: 0 22px 70px rgba(35,38,48,.08);
+    }
+    * { box-sizing: border-box; }
+    html { min-height: 100%; background: var(--page); }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse at 50% -12%, rgba(255,255,255,.98), transparent 52rem),
+        linear-gradient(180deg,#fafafd 0%,#f5f5f7 52%,#f1f2f5 100%);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, textarea { font: inherit; }
+    button { -webkit-tap-highlight-color: transparent; }
+    .shell { width: min(100% - 36px, 900px); margin: 0 auto; padding: 24px 0 54px; }
+    .nav {
+      display:flex; align-items:center; justify-content:space-between; gap:20px;
+      min-height:48px; margin-bottom:66px;
+    }
+    .brand { display:flex; align-items:center; gap:11px; font-size:16px; font-weight:700; letter-spacing:-.035em; }
+    .brand-icon {
+      width:34px;height:34px;display:grid;place-items:center;border-radius:11px;
+      color:white;background:#1d1d1f;box-shadow:0 3px 9px rgba(0,0,0,.12);
+    }
+    .brand-icon svg { width:19px;height:19px; }
+    .brand span span { color:#77777d;font-weight:500; }
+    .status {
+      display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border-radius:999px;
+      color:#287d4f;background:rgba(45,160,95,.08);border:1px solid rgba(45,160,95,.13);
+      font-size:12px;font-weight:600;white-space:nowrap;
+    }
+    .status-dot { width:7px;height:7px;border-radius:50%;background:#30a46c; }
+    .hero { text-align:center; margin:0 auto 34px; max-width:690px; }
+    .eyebrow {
+      margin-bottom:13px;color:#77777d;font-size:12px;font-weight:650;
+      letter-spacing:.12em;text-transform:uppercase;
+    }
+    h1 {
+      margin:0;font-size:clamp(38px,7vw,62px);line-height:1.04;letter-spacing:-.065em;
+      font-weight:750;
+    }
+    .lead { max-width:570px;margin:17px auto 0;color:var(--secondary);font-size:17px;line-height:1.55; }
+    .workspace {
+      padding:30px;border:1px solid rgba(255,255,255,.9);border-radius:27px;
+      background:var(--surface);box-shadow:var(--shadow);backdrop-filter:blur(24px);
+    }
+    .heading-row {
+      display:flex;align-items:flex-end;justify-content:space-between;gap:15px;margin-bottom:16px;
+    }
+    .section-title { font-size:17px;font-weight:700;letter-spacing:-.025em; }
+    .section-sub { color:var(--secondary);font-size:12px; }
+    .voices { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;margin-bottom:29px; }
+    .voice {
+      min-height:113px;padding:15px 15px 14px;border:1px solid var(--line);border-radius:17px;
+      background:rgba(255,255,255,.78);color:var(--ink);text-align:left;cursor:pointer;
+      transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease,background .16s ease;
+    }
+    .voice:hover:not(:disabled) { transform:translateY(-1px);border-color:rgba(0,113,227,.35); }
+    .voice.selected {
+      border-color:rgba(0,113,227,.62);background:#f6faff;
+      box-shadow:inset 0 0 0 1px rgba(0,113,227,.16),0 4px 12px rgba(0,113,227,.06);
+    }
+    .voice:focus-visible,.send:focus-visible,textarea:focus-visible { outline:3px solid rgba(0,113,227,.35);outline-offset:3px; }
+    .voice:disabled { cursor:not-allowed;opacity:.62;background:#f7f7f8; }
+    .voice-top { display:flex;align-items:center;justify-content:space-between;margin-bottom:13px; }
+    .voice-symbol {
+      width:32px;height:32px;display:grid;place-items:center;border-radius:10px;
+      background:#f0f0f2;color:#333338;font-size:17px;
+    }
+    .voice.pink .voice-symbol { color:#b84e7d;background:#fff0f6; }
+    .voice.pudge .voice-symbol { color:#7b4a32;background:#f6efe9; }
+    .selection {
+      width:17px;height:17px;border:1.5px solid #c7c7cc;border-radius:50%;
+      display:grid;place-items:center;color:transparent;font-size:10px;
+    }
+    .selected .selection { background:var(--blue);border-color:var(--blue);color:white; }
+    .voice-name { display:block;font-size:14px;font-weight:680;letter-spacing:-.01em; }
+    .voice-desc { display:block;margin-top:3px;color:var(--secondary);font-size:12px; }
+    .locked { display:block;margin-top:7px;color:#8a745e;font-size:10px; }
+    .composer {
+      border:1px solid rgba(29,29,31,.12);border-radius:17px;
+      background:var(--surface-solid);padding:16px 18px 12px;
+      transition:border-color .16s ease,box-shadow .16s ease;
+    }
+    .composer:focus-within { border-color:rgba(0,113,227,.55);box-shadow:0 0 0 4px rgba(0,113,227,.08); }
+    textarea {
+      display:block;width:100%;min-height:136px;resize:vertical;border:0;outline:0;
+      background:transparent;color:var(--ink);font-size:16px;line-height:1.62;padding:0;
+      font-family:inherit;
+    }
+    textarea::placeholder { color:#a1a1a6; }
+    .composer-bottom {
+      display:flex;justify-content:space-between;align-items:center;gap:12px;
+      padding-top:10px;color:var(--tertiary);font-size:12px;
+    }
+    .send-row { display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:17px; }
+    .send {
+      min-width:155px;height:45px;padding:0 21px;border:0;border-radius:999px;
+      display:inline-flex;align-items:center;justify-content:center;gap:9px;
+      background:var(--ink);color:white;font-size:14px;font-weight:650;cursor:pointer;
+      transition:background .16s ease,transform .16s ease,opacity .16s ease;
+    }
+    .send:hover { background:#39393d;transform:translateY(-1px); }
+    .send:active { transform:translateY(0); }
+    .send svg { width:16px;height:16px; }
+    .send-hint { color:var(--secondary);font-size:12px;text-align:right; }
+    .notice {
+      min-height:24px;margin-top:13px;color:var(--secondary);
+      display:flex;align-items:center;gap:8px;font-size:13px;
+    }
+    .notice.error { color:#c53434; }
+    .notice.success { color:#248a55; }
+    .spinner { width:13px;height:13px;border:2px solid rgba(0,0,0,.12);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .footnote { margin-top:17px;text-align:center;color:#98989d;font-size:11px; }
+    @media(max-width:680px) {
+      .shell { width:min(100% - 22px,560px);padding-top:14px; }
+      .nav { margin-bottom:48px; }
+      .hero { margin-bottom:25px; }
+      .lead { font-size:15px; }
+      .workspace { padding:18px;border-radius:22px; }
+      .voices { grid-template-columns:1fr;gap:8px; }
+      .voice { min-height:82px;padding:12px 14px; }
+      .voice-top { margin-bottom:7px; }
+      .send-row { align-items:flex-start;flex-direction:column; }
+      .send { width:100%; }
+      .send-hint { text-align:left; }
+      .composer-bottom { align-items:flex-start; }
+    }
+    @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms!important;transition-duration:.01ms!important; } }
+  </style>
 </head>
 <body>
-<main class="page">
-<header class="topbar">
-<div class="brand"><div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 10v4M7 6v12M11 3v18M15 7v10M19 10v4M22 11v2"/></svg></div><span>Voice Reader <span style="color:#9d91ff">Pro</span></span></div>
-<div class="local-pill"><span class="dot"></span> Локальная озвучка</div>
-</header>
-<section class="intro"><div class="eyebrow">Текст → голос → Discord</div><h1>Пусть текст<br>звучит.</h1><p class="subtitle">Напиши сообщение, выбери диктора — Voice Reader произнесёт его в голосовом канале.</p></section>
-<section class="panel" aria-label="Озвучивание сообщения">
-<div class="section-head"><div class="section-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v3m-4 0h8"/></svg>Выбери голос</div><span class="hint">Для этого сообщения</span></div>
-<div class="voice-grid" role="group" aria-label="Доступные голоса">
-<button class="voice-card selected" type="button" data-voice="normal" aria-pressed="true"><span class="voice-top"><span class="voice-icon">🎙️</span><span class="check">✓</span></span><span class="voice-name">Обычный мужской</span><span class="voice-desc">Спокойный, нейтральный</span></button>
-<button class="voice-card disabled" type="button" disabled aria-disabled="true" title="Оригинальный голосовой пакет пока не подключён"><span class="voice-top"><span class="voice-icon">🪓</span><span class="check">—</span></span><span class="voice-name">Пудж из Dota 2</span><span class="voice-desc">Оригинальный голос пока недоступен</span><span class="pending">Нужен разрешённый голосовой пакет</span></button>
-<button class="voice-card pink" type="button" data-voice="cute_girl" aria-pressed="false"><span class="voice-top"><span class="voice-icon">✨</span><span class="check">✓</span></span><span class="voice-name">Милая девушка</span><span class="voice-desc">Мягкий женский голос</span></button>
-</div>
-<div class="section-head"><div class="section-title">Твоё сообщение</div><span class="hint">До 350 символов</span></div>
-<div class="composer"><textarea id="message" maxlength="350" rows="4" placeholder="Напиши что-нибудь…" aria-label="Текст для озвучивания"></textarea><div class="composer-foot"><span>Enter — отправить · Shift + Enter — новая строка</span><span id="counter">0 / 350</span></div></div>
-<div class="send-row"><button class="send" id="send" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>Озвучить</button><span class="send-hint">Сообщение попадёт в очередь бота</span></div>
-<div class="notice" id="notice" role="status" aria-live="polite"></div>
-</section>
-<footer class="footer"><span>Voice Reader Pro</span><span>Голос создаётся локально на компьютере</span></footer>
-</main>
-<script>
-const message=document.querySelector('#message');
-const send=document.querySelector('#send');
-const notice=document.querySelector('#notice');
-const counter=document.querySelector('#counter');
-const voiceCards=[...document.querySelectorAll('[data-voice]')];
-let selectedVoice='normal';
-let sending=false;
+  <main class="shell">
+    <header class="nav">
+      <div class="brand">
+        <div class="brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M3 10v4M7 6v12M11 3v18M15 7v10M19 10v4M22 11v2"/>
+          </svg>
+        </div>
+        <div>Voice Reader <span>Pro</span></div>
+      </div>
+      <div class="status"><span class="status-dot"></span> Бот готов к озвучиванию</div>
+    </header>
 
-function setNotice(text,kind=''){
-  notice.className='notice '+kind;
-  notice.replaceChildren();
-  if(kind==='loading'){
-    const spinner=document.createElement('span');
-    spinner.className='spinner';
-    notice.append(spinner);
-  }
-  notice.append(document.createTextNode(text));
-}
-function selectVoice(card){
-  if(card.disabled)return;
-  selectedVoice=card.dataset.voice;
-  for(const item of voiceCards){
-    const active=item===card;
-    item.classList.toggle('selected',active);
-    item.setAttribute('aria-pressed',String(active));
-  }
-  setNotice('Выбран голос: '+card.querySelector('.voice-name').textContent+'.');
-}
-for(const card of voiceCards)card.addEventListener('click',()=>selectVoice(card));
-message.addEventListener('input',()=>{counter.textContent=message.value.length+' / 350';});
+    <section class="hero">
+      <div class="eyebrow">Voice Reader Pro</div>
+      <h1>Текст становится голосом.</h1>
+      <p class="lead">Выбери голос и отправь сообщение. Бот прочитает его в голосовом канале Discord.</p>
+    </section>
 
-async function submitMessage(){
-  const text=message.value.trim();
-  if(!text||sending){if(!text)setNotice('Сначала напиши сообщение.','error');return;}
-  sending=true;
-  send.disabled=true;
-  send.textContent='Отправляем…';
-  setNotice('Передаю сообщение боту…','loading');
-  try{
-    const response=await fetch('/api/speak',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:text,voice:selectedVoice})});
-    const result=await response.json().catch(()=>({}));
-    if(!response.ok)throw new Error(result.message||('Ошибка сервера: '+response.status));
-    message.value='';
-    counter.textContent='0 / 350';
-    setNotice(result.message||'Сообщение добавлено в очередь.','success');
-  }catch(error){
-    setNotice(error.message||'Не удалось связаться с сервером.','error');
-  }finally{
-    sending=false;
-    send.disabled=false;
-    send.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>Озвучить';
+    <section class="workspace" aria-label="Панель озвучивания">
+      <div class="heading-row">
+        <div class="section-title">Выбери голос</div>
+        <div class="section-sub">Для каждого сообщения отдельно</div>
+      </div>
+
+      <div class="voices" role="group" aria-label="Доступные голоса">
+        <button class="voice selected" type="button" data-voice="normal" aria-pressed="true">
+          <span class="voice-top"><span class="voice-symbol">◖</span><span class="selection">✓</span></span>
+          <span class="voice-name">Обычный мужской</span>
+          <span class="voice-desc">Спокойный и нейтральный</span>
+        </button>
+        <button class="voice pink" type="button" data-voice="cute_girl" aria-pressed="false">
+          <span class="voice-top"><span class="voice-symbol">✳</span><span class="selection">✓</span></span>
+          <span class="voice-name">Милая девушка</span>
+          <span class="voice-desc">Мягкий женский голос</span>
+        </button>
+        <button class="voice pudge" type="button" disabled aria-disabled="true" title="Оригинальный голосовой пакет пока не подключён">
+          <span class="voice-top"><span class="voice-symbol">✦</span><span class="selection">—</span></span>
+          <span class="voice-name">Пудж из Dota 2</span>
+          <span class="voice-desc">Оригинальный голос пока недоступен</span>
+          <span class="locked">Нужен разрешённый голосовой пакет</span>
+        </button>
+      </div>
+
+      <div class="heading-row">
+        <div class="section-title">Сообщение</div>
+        <div class="section-sub">До 350 символов</div>
+      </div>
+      <div class="composer">
+        <textarea id="message" maxlength="350" rows="4" placeholder="Напиши что-нибудь…" aria-label="Текст для озвучивания"></textarea>
+        <div class="composer-bottom">
+          <span>Enter — отправить&nbsp;&nbsp; · &nbsp;&nbsp;Shift + Enter — новая строка</span>
+          <span id="counter">0 / 350</span>
+        </div>
+      </div>
+
+      <div class="send-row">
+        <button class="send" id="send" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+          Отправить
+        </button>
+        <span class="send-hint" id="sendHint">Сообщения выстраиваются в очередь по порядку.</span>
+      </div>
+      <div class="notice" id="notice" role="status" aria-live="polite"></div>
+    </section>
+
+    <footer class="footnote">Голос создаётся локально на компьютере · Voice Reader Pro</footer>
+  </main>
+
+  <script>
+    const message = document.querySelector('#message');
+    const send = document.querySelector('#send');
+    const sendHint = document.querySelector('#sendHint');
+    const notice = document.querySelector('#notice');
+    const counter = document.querySelector('#counter');
+    const voiceCards = [...document.querySelectorAll('[data-voice]')];
+    let selectedVoice = 'normal';
+    let pendingRequests = 0;
+
+    function setNotice(text, kind = '') {
+      notice.className = 'notice ' + kind;
+      notice.replaceChildren();
+      if (kind === 'loading') {
+        const spinner = document.createElement('span');
+        spinner.className = 'spinner';
+        notice.append(spinner);
+      }
+      notice.append(document.createTextNode(text));
+    }
+
+    function selectVoice(card) {
+      if (card.disabled) return;
+      selectedVoice = card.dataset.voice;
+      for (const item of voiceCards) {
+        const active = item === card;
+        item.classList.toggle('selected', active);
+        item.setAttribute('aria-pressed', String(active));
+      }
+      setNotice('Выбран голос: ' + card.querySelector('.voice-name').textContent + '.');
+    }
+
+    for (const card of voiceCards) card.addEventListener('click', () => selectVoice(card));
+    message.addEventListener('input', () => {
+      counter.textContent = message.value.length + ' / 350';
+    });
+
+    async function submitMessage() {
+      const text = message.value.trim();
+      const voice = selectedVoice;
+      if (!text) {
+        setNotice('Сначала напиши сообщение.', 'error');
+        return;
+      }
+
+      pendingRequests += 1;
+      sendHint.textContent = pendingRequests > 1
+        ? 'Отправляется сообщений: ' + pendingRequests
+        : 'Сообщение передаётся боту…';
+      setNotice('Добавляю сообщение в очередь…', 'loading');
+
+      try {
+        const response = await fetch('/api/speak', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({text: text, voice: voice})
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.message || ('Ошибка сервера: ' + response.status));
+
+        if (message.value.trim() === text) {
+          message.value = '';
+          counter.textContent = '0 / 350';
+        }
+        setNotice(result.message || 'Сообщение добавлено в очередь.', 'success');
+      } catch (error) {
+        setNotice(error.message || 'Не удалось связаться с сервером.', 'error');
+      } finally {
+        pendingRequests = Math.max(0, pendingRequests - 1);
+        sendHint.textContent = pendingRequests > 0
+          ? 'Ещё отправляется: ' + pendingRequests
+          : 'Сообщения выстраиваются в очередь по порядку.';
+        message.focus();
+      }
+    }
+
+    send.addEventListener('click', submitMessage);
+    message.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+        event.preventDefault();
+        submitMessage();
+      }
+    });
+
     message.focus();
-  }
-}
-send.addEventListener('click',submitMessage);
-message.addEventListener('keydown',event=>{
-  if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){
-    event.preventDefault();
-    submitMessage();
-  }
-});
-message.focus();
-</script>
+  </script>
 </body>
 </html>
