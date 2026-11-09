@@ -17,7 +17,7 @@ class VoiceService:
         self.ffmpeg, self.log = str(ffmpeg), logger
         self.queue = asyncio.Queue(MAX_QUEUE)
         self.client = discord.Client(intents=discord.Intents(guilds=True, voice_states=True))
-        self.runner = self.site = self.tunnel = self.worker = self.discord_task = None
+        self.runner = self.site = self.tunnel = self.worker = self.discord_task = self.start_watchdog = None
         self.voice_client = None; self.ready = asyncio.Event(); self.visitors = defaultdict(deque)
         self.client.event(self._on_ready)
     async def _on_ready(self):
@@ -34,7 +34,14 @@ class VoiceService:
         self.worker = asyncio.create_task(self.play_worker())
         self.discord_task = asyncio.create_task(self.client.start(self.token))
         self.discord_task.add_done_callback(self._discord_finished)
+        self.start_watchdog = asyncio.create_task(self._check_discord_startup())
         self.log('Веб-сервер запущен. Подключаем бота…')
+    async def _check_discord_startup(self):
+        try:
+            await asyncio.wait_for(self.ready.wait(), timeout=20)
+        except asyncio.TimeoutError:
+            if self.discord_task and not self.discord_task.done():
+                self.log('Discord не ответил за 20 секунд. Проверьте VPN, брандмауэр или доступ к Discord в этой сети.')
     def _discord_finished(self, task):
         """Show a background Discord failure in the GUI journal."""
         if task.cancelled(): return
@@ -78,6 +85,7 @@ class VoiceService:
     async def stop(self):
         if self.worker: self.worker.cancel()
         if self.discord_task and not self.discord_task.done(): self.discord_task.cancel()
+        if self.start_watchdog and not self.start_watchdog.done(): self.start_watchdog.cancel()
         if self.voice_client and self.voice_client.is_playing(): self.voice_client.stop()
         if not self.client.is_closed(): await self.client.close()
         if self.runner: await self.runner.cleanup()
