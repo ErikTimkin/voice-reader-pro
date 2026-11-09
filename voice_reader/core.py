@@ -18,6 +18,62 @@ from edge_tts.exceptions import NoAudioReceived
 MAX_TEXT, MAX_QUEUE = 350, 20
 RATE_WINDOW, RATE_COUNT = 60, 5
 
+# Presets use Microsoft's standard Russian neural voices. The Pudge option is
+# a low-pitched/slow Dmitry preset, not a clone of the Dota 2 character voice.
+VOICE_PRESETS = {
+    "dmitry": {
+        "label": "Дмитрий — обычный",
+        "voice": "ru-RU-DmitryNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz",
+    },
+    "pudge": {
+        "label": "Пудж — низкий и басовый",
+        "voice": "ru-RU-DmitryNeural",
+        "rate": "-10%",
+        "pitch": "-18Hz",
+    },
+    "svetlana": {
+        "label": "Светлана — мягкий женский",
+        "voice": "ru-RU-SvetlanaNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz",
+    },
+    "cute_girl": {
+        "label": "Милая девушка — звонкий голос",
+        "voice": "ru-RU-SvetlanaNeural",
+        "rate": "+3%",
+        "pitch": "+10Hz",
+    },
+    "dariya": {
+        "label": "Дарья — другой женский голос",
+        "voice": "ru-RU-DariyaNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz",
+    },
+}
+
+VOICE_PRESET_LABELS = {key: value["label"] for key, value in VOICE_PRESETS.items()}
+VOICE_LABEL_TO_PRESET = {value["label"]: key for key, value in VOICE_PRESETS.items()}
+LEGACY_VOICE_IDS = {
+    "ru-RU-DmitryNeural": "dmitry",
+    "ru-RU-SvetlanaNeural": "svetlana",
+    "ru-RU-DariyaNeural": "dariya",
+}
+
+
+def resolve_voice_profile(selection):
+    key = LEGACY_VOICE_IDS.get(selection, selection)
+    if key in VOICE_PRESETS:
+        return dict(VOICE_PRESETS[key])
+    # Preserve support for a custom Edge TTS voice ID entered in older configs.
+    return {
+        "label": selection or VOICE_PRESETS["dmitry"]["label"],
+        "voice": selection or "ru-RU-DmitryNeural",
+        "rate": "+0%",
+        "pitch": "+0Hz",
+    }
+
 
 class DiagnosticFFmpegPCMAudio(discord.FFmpegPCMAudio):
     """FFmpeg-to-PCM source that reports decoded frame count and signal level."""
@@ -84,7 +140,10 @@ class BlockingMP3Stream:
     def read(self, size: int = -1) -> bytes:
         if size is None or size < 0:
             size = 8192
-        while len(self._buffer) < size and not self._finished:
+
+        # Do not wait until the buffer reaches FFmpeg's requested 8192 bytes.
+        # Returning the first available TTS chunk immediately cuts startup latency.
+        while not self._buffer and not self._finished:
             chunk = self._chunks.get()
             if chunk is None:
                 self._finished = True
@@ -325,15 +384,21 @@ class VoiceService:
                     self.log('Голосовое соединение потеряно. Новые сообщения временно не принимаются.')
                     continue
 
-                voices_to_try = [self.voice]
-                fallback_voice = "ru-RU-SvetlanaNeural"
-                if fallback_voice != self.voice:
-                    voices_to_try.append(fallback_voice)
+                selected_profile = resolve_voice_profile(self.voice)
+                profiles_to_try = [selected_profile]
+                fallback_profile = (
+                    VOICE_PRESETS["dmitry"]
+                    if selected_profile["voice"] == "ru-RU-SvetlanaNeural"
+                    else VOICE_PRESETS["svetlana"]
+                )
+                if fallback_profile["voice"] != selected_profile["voice"]:
+                    profiles_to_try.append(dict(fallback_profile))
 
                 synthesized = False
                 last_tts_error = None
 
-                for voice_index, candidate_voice in enumerate(voices_to_try):
+                for voice_index, candidate_profile in enumerate(profiles_to_try):
+                    candidate_voice = candidate_profile["voice"]
                     for attempt in range(1, 3):
                         audio_stream = None
                         playback_done = None
@@ -344,13 +409,22 @@ class VoiceService:
 
                         try:
                             if voice_index == 0 and attempt == 1:
-                                self.log(f'Запрашиваю поток Edge TTS: {candidate_voice}.')
+                                self.log(
+                                    f'Запрашиваю поток Edge TTS: {candidate_profile["label"]} '
+                                    f'({candidate_voice}), скорость {candidate_profile["rate"]}, '
+                                    f'тон {candidate_profile["pitch"]}.'
+                                )
                             elif voice_index == 0:
                                 self.log(f'Edge TTS не прислал аудио. Повторная попытка {attempt}/2…')
                             else:
-                                self.log(f'Пробую запасной русский голос {candidate_voice}…')
+                                self.log(f'Пробую запасной голос {candidate_profile["label"]} ({candidate_voice})…')
 
-                            communicate = edge_tts.Communicate(text, candidate_voice)
+                            communicate = edge_tts.Communicate(
+                                text,
+                                candidate_voice,
+                                rate=candidate_profile["rate"],
+                                pitch=candidate_profile["pitch"],
+                            )
                             audio_bytes = 0
 
                             async for chunk in communicate.stream():
@@ -418,7 +492,7 @@ class VoiceService:
                                         executable=self.ffmpeg,
                                         logger=self.log,
                                         pipe=True,
-                                        before_options='-nostdin -f mp3',
+                                        before_options='-nostdin -f mp3 -probesize 32 -analyzeduration 0',
                                         options='-af volume=1.5',
                                     )
                                     try:
