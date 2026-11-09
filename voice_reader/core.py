@@ -150,7 +150,7 @@ class VoiceService:
                 done = asyncio.get_running_loop().create_future()
                 loop = asyncio.get_running_loop()
                 self.voice_client.play(
-                    discord.FFmpegPCMAudio(file_name, executable=self.ffmpeg),
+                    discord.FFmpegOpusAudio(file_name, executable=self.ffmpeg),
                     after=lambda err: loop.call_soon_threadsafe(
                         lambda: (not done.done()) and done.set_result(err)
                     )
