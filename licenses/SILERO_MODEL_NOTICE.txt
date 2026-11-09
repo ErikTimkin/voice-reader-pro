@@ -5,10 +5,14 @@ Voice model: Silero Russian TTS v5.6 (v5_6_ru.pt)
 Official model source:
 https://models.silero.ai/models/tts/ru/v5_6_ru.pt
 
-The Silero Models repository states that its models are distributed under
-CC-NC-BY (Creative Commons Attribution-NonCommercial). The model is included
-for personal, non-commercial use only. Do not use or redistribute it for
-commercial purposes without obtaining the appropriate permission from Silero.
+The Silero Models repository publishes its non-CIS v5 TTS models under
+Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+(CC BY-NC-SA 4.0). The v5_6_ru model is covered by that repository license.
+This bundled model is intended for personal, non-commercial use only.
+Commercial use requires separate permission from the rights holder.
+
+License text:
+https://github.com/snakers4/silero-models/blob/master/LICENSE
 
 Attribution:
 Silero Team — Silero Models, Russian TTS v5.6
