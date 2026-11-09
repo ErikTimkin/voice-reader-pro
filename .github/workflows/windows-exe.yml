@@ -90,6 +90,7 @@ jobs:
 
           New-Item -ItemType Directory -Force dist/VoiceReaderPro/samples | Out-Null
           Copy-Item tests/voice-samples/*.wav dist/VoiceReaderPro/samples/ -Force
+          Copy-Item README.md dist/VoiceReaderPro/README.md -Force
       - name: Confirm output
         shell: pwsh
         run: |
