@@ -1,6 +1,7 @@
-# PyInstaller one-file Windows build. The workflow supplies tools/*.exe.
-# The local Silero model remains beside the EXE in voices/v5_6_ru.pt.
-# Collect DAVE, discord.py/libopus, PyTorch and NumPy native libraries.
+# PyInstaller onedir Windows build.
+# The local Silero model is distributed alongside the app in voices/.
+# A folder build avoids extracting the entire PyTorch runtime to a temp
+# directory on every launch, while the user still starts VoiceReaderPro.exe.
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
@@ -35,11 +36,21 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
+    [],
+    exclude_binaries=True,
+    name="VoiceReaderPro",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=False,
+)
+coll = COLLECT(
+    exe,
     a.binaries,
     a.datas,
-    [],
-    name="VoiceReaderPro",
-    console=False,
+    strip=False,
     upx=False,
-    onefile=True,
+    upx_exclude=[],
+    name="VoiceReaderPro",
 )
