@@ -12,6 +12,7 @@ import aiohttp
 from aiohttp import web
 import discord
 from voice_reader.local_tts import LocalSileroTTS, VOICE_PRESETS, resolve_voice_profile
+from voice_reader.number_normalizer import normalize_numbers_for_speech
 
 MAX_TEXT = 350
 
@@ -331,10 +332,13 @@ class VoiceService:
                     continue
 
                 profile = resolve_voice_profile(selected_voice)
+                speech_text = normalize_numbers_for_speech(text)
                 self.log(
                     f'Локальная озвучка: {profile["label"]}; '
                     f'диктор Silero={profile["speaker"]}; выбор сайта={selected_voice}.'
                 )
+                if speech_text != text:
+                    self.log(f'Числа преобразованы в слова перед озвучкой: {speech_text[:180]}')
 
                 fd, file_name = tempfile.mkstemp(suffix='.wav', prefix='voice-reader-')
                 os.close(fd)
@@ -344,7 +348,7 @@ class VoiceService:
                 # so Discord gateway and voice heartbeats remain responsive.
                 audio_bytes, audio_duration = await asyncio.to_thread(
                     self.local_tts.synthesize_to_wav,
-                    text,
+                    speech_text,
                     profile["speaker"],
                     file_name,
                 )
