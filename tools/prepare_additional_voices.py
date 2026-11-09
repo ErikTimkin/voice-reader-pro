@@ -104,42 +104,48 @@ def _audio_url(row: dict) -> str | None:
 
 
 def _convert_candidate(
-    session: requests.Session, audio_url: str, ffmpeg: Path, target: Path
-) -> float:
-    with tempfile.TemporaryDirectory(prefix="armenian-reference-") as temporary:
-        source = Path(temporary) / "source-audio"
-        response = session.get(audio_url, timeout=(30, 180), stream=True)
-        response.raise_for_status()
-        with source.open("wb") as output:
-            for chunk in response.iter_content(chunk_size=1024 * 1024):
-                if chunk:
-                    output.write(chunk)
+    session: requests.Session,
+    audio_url: str,
+    ffmpeg: Path,
+    temporary_dir: Path,
+    index: int,
+) -> tuple[Path, float]:
+    source = temporary_dir / f"source-{index}"
+    output_path = temporary_dir / f"clip-{index}.wav"
+    response = session.get(audio_url, timeout=(30, 120), stream=True)
+    response.raise_for_status()
+    with source.open("wb") as output:
+        for chunk in response.iter_content(chunk_size=1024 * 1024):
+            if chunk:
+                output.write(chunk)
 
-        command = [
-            str(ffmpeg),
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-y",
-            "-i",
-            str(source),
-            "-vn",
-            "-ac",
-            "1",
-            "-ar",
-            "24000",
-            "-t",
-            "10",
-            "-c:a",
-            "pcm_s16le",
-            str(target),
-        ]
-        result = subprocess.run(command, capture_output=True, text=True, timeout=120)
-        if result.returncode != 0 or not target.is_file():
-            raise RuntimeError("FFmpeg could not convert the Armenian reference clip: " + result.stderr[-800:])
-
-    with wave.open(str(target), "rb") as audio:
-        return audio.getnframes() / float(audio.getframerate())
+    command = [
+        str(ffmpeg),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(source),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "24000",
+        "-t",
+        "10",
+        "-c:a",
+        "pcm_s16le",
+        str(output_path),
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, timeout=120)
+    if result.returncode != 0 or not output_path.is_file():
+        raise RuntimeError(
+            "FFmpeg could not convert the Armenian reference clip: " + result.stderr[-800:]
+        )
+    with wave.open(str(output_path), "rb") as audio:
+        duration = audio.getnframes() / float(audio.getframerate())
+    return output_path, duration
 
 
 def download_armenian_reference(root: Path, ffmpeg: Path) -> None:
@@ -151,10 +157,10 @@ def download_armenian_reference(root: Path, ffmpeg: Path) -> None:
 
     session = requests.Session()
     retry = Retry(
-        total=8,
-        connect=5,
-        read=5,
-        backoff_factor=1.0,
+        total=3,
+        connect=3,
+        read=3,
+        backoff_factor=0.4,
         status_forcelist=(429, 500, 502, 503, 504),
         allowed_methods=frozenset({"GET"}),
         respect_retry_after_header=True,
@@ -163,6 +169,7 @@ def download_armenian_reference(root: Path, ffmpeg: Path) -> None:
     session.mount("https://", adapter)
     session.mount("http://", adapter)
     session.headers.update({"User-Agent": "VoiceReaderPro-model-pack/1.0"})
+
     split_name = "generated"
     config = _dataset_config(session, split_name)
     print(
@@ -171,62 +178,130 @@ def download_armenian_reference(root: Path, ffmpeg: Path) -> None:
         flush=True,
     )
 
-    # The dataset viewer supports 100 rows per request. We only retain the anonymized
-    # audio samples, never the speaker's name, client_id, or other identifying metadata.
     total_rows = None
-    candidates = 0
-    for offset in range(0, 100_000, 100):
-        url = "https://datasets-server.huggingface.co/rows?" + urlencode(
-            {
-                "dataset": ARMENIAN_DATASET,
-                "config": config,
-                "split": split_name,
-                "offset": offset,
-                "length": 100,
-            }
-        )
-        try:
-            response = session.get(url, timeout=90)
-            response.raise_for_status()
-            payload = response.json()
-        except requests.RequestException as exc:
-            print(
-                f"Dataset viewer failed at offset {offset}; skipping this page after retries: {exc}",
-                flush=True,
-            )
-            continue
-        total_rows = payload.get("num_rows_total", total_rows)
+    male_rows = 0
+    audio_candidates = 0
+    clip_index = 0
+    voice_clips: dict[str, list[tuple[Path, float]]] = {}
 
-        for wrapper in payload.get("rows", []):
-            row = wrapper.get("row", {})
-            if not _is_male(row.get("gender")):
-                continue
-            audio_url = _audio_url(row)
-            if not audio_url:
-                continue
-            candidates += 1
-            temporary_output = target_dir / "armenian_reference.candidate.wav"
+    with tempfile.TemporaryDirectory(prefix="armenian-reference-batch-") as temp_name:
+        temporary_dir = Path(temp_name)
+
+        for offset in range(0, 10_000, 100):
+            url = "https://datasets-server.huggingface.co/rows?" + urlencode(
+                {
+                    "dataset": ARMENIAN_DATASET,
+                    "config": config,
+                    "split": split_name,
+                    "offset": offset,
+                    "length": 100,
+                }
+            )
             try:
-                duration = _convert_candidate(session, audio_url, ffmpeg, temporary_output)
-            except Exception as exc:
-                temporary_output.unlink(missing_ok=True)
-                print(f"Skipping an unreadable public dataset clip: {exc}", flush=True)
-                continue
-            if 5.0 <= duration <= 10.0:
-                temporary_output.replace(target)
+                response = session.get(url, timeout=45)
+                response.raise_for_status()
+                payload = response.json()
+            except requests.RequestException as exc:
                 print(
-                    f"Selected anonymized male Armenian reference audio: {duration:.2f}s "
-                    f"({candidates} candidate clips checked).",
+                    f"Dataset viewer failed at offset {offset}; skipping this page after retries: {exc}",
                     flush=True,
                 )
-                return
-            temporary_output.unlink(missing_ok=True)
+                continue
 
-        if total_rows and offset + 100 >= total_rows:
-            break
+            total_rows = payload.get("num_rows_total", total_rows)
+            rows = payload.get("rows", [])
+            page_male_rows = 0
+
+            for wrapper in rows:
+                row = wrapper.get("row", {})
+                if not _is_male(row.get("gender")):
+                    continue
+                page_male_rows += 1
+                male_rows += 1
+                audio_url = _audio_url(row)
+                if not audio_url:
+                    continue
+
+                audio_candidates += 1
+                clip_index += 1
+                try:
+                    clip_path, duration = _convert_candidate(
+                        session, audio_url, ffmpeg, temporary_dir, clip_index
+                    )
+                except Exception as exc:
+                    print(f"Skipping an unreadable synthetic audio clip: {exc}", flush=True)
+                    continue
+
+                # client_id is used only in memory to join clips from the same
+                # synthetic voice. It is never written to the package or logs.
+                voice_id = str(row.get("client_id") or f"single-clip-{clip_index}")
+                voice_clips.setdefault(voice_id, []).append((clip_path, duration))
+
+                if 5.0 <= duration <= 10.0:
+                    shutil.copy2(clip_path, target)
+                    print(
+                        f"Selected one synthetic male Armenian reference clip: {duration:.2f}s.",
+                        flush=True,
+                    )
+                    return
+
+                combined_duration = sum(item[1] for item in voice_clips[voice_id])
+                if combined_duration >= 5.0:
+                    list_file = temporary_dir / "reference-list.txt"
+                    entries = []
+                    for path, _duration in voice_clips[voice_id]:
+                        escaped = str(path.resolve()).replace("'", "'\\''")
+                        entries.append(f"file '{escaped}'")
+                    list_file.write_text("\\n".join(entries) + "\\n", encoding="utf-8")
+
+                    concat_command = [
+                        str(ffmpeg),
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-y",
+                        "-f",
+                        "concat",
+                        "-safe",
+                        "0",
+                        "-i",
+                        str(list_file),
+                        "-t",
+                        "10",
+                        "-ac",
+                        "1",
+                        "-ar",
+                        "24000",
+                        "-c:a",
+                        "pcm_s16le",
+                        str(target),
+                    ]
+                    result = subprocess.run(
+                        concat_command, capture_output=True, text=True, timeout=120
+                    )
+                    if result.returncode == 0 and target.is_file():
+                        with wave.open(str(target), "rb") as audio:
+                            final_duration = audio.getnframes() / float(audio.getframerate())
+                        if 5.0 <= final_duration <= 10.0:
+                            print(
+                                f"Combined {len(voice_clips[voice_id])} clips from one synthetic male voice: "
+                                f"{final_duration:.2f}s.",
+                                flush=True,
+                            )
+                            return
+                    target.unlink(missing_ok=True)
+
+            print(
+                f"Scanned dataset page {offset // 100 + 1}: "
+                f"{page_male_rows} male rows; {male_rows} total male rows checked.",
+                flush=True,
+            )
+            if total_rows and offset + 100 >= total_rows:
+                break
 
     raise RuntimeError(
-        f"No valid 5–10 second male Armenian reference clip found after checking {candidates} candidates."
+        f"No 5–10 second male synthetic Armenian reference found: "
+        f"{male_rows} male rows and {audio_candidates} audio candidates checked."
     )
 
 
