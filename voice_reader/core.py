@@ -341,7 +341,13 @@ class VoiceService:
                     'Голосовой тракт перед запуском: '
                     f'connected={voice_client.is_connected()}, mode={voice_client.mode}, '
                     f'DAVE_session={dave_session is not None}, '
-                    f'DAVE_can_encrypt={getattr(connection_state, "can_encrypt", None)}, '
+                    f'DAVE_protocol_version={getattr(connection_state, "dave_protocol_version", None)}, '
+                    f'DAVE_downgraded={getattr(connection_state, "dave_downgraded", None)}, '
+                    f'DAVE_session_ready={getattr(dave_session, "ready", None)}, '
+                    f'DAVE_session_can_encrypt={getattr(dave_session, "can_encrypt", None)}, '
+                    f'DAVE_connection_can_encrypt={getattr(connection_state, "can_encrypt", None)}, '
+                    f'DAVE_pending_transitions={getattr(connection_state, "dave_pending_transitions", None)}, '
+                    f'Connected_user_ids={len(getattr(connection_state, "connected_user_ids", ()))}, '
                     f'Opus_loaded_before_play={discord.opus.is_loaded()}.'
                 )
 
