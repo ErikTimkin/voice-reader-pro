@@ -5,6 +5,7 @@ import tempfile
 import time
 from collections import defaultdict, deque
 from pathlib import Path
+import aiohttp
 from aiohttp import web
 import discord
 import edge_tts
@@ -32,10 +33,28 @@ class VoiceService:
         app = web.Application(client_max_size=2048); app.router.add_get('/', self.index); app.router.add_post('/api/speak', self.speak)
         self.runner = web.AppRunner(app); await self.runner.setup(); self.site = web.TCPSite(self.runner, '127.0.0.1', 8765); await self.site.start()
         self.worker = asyncio.create_task(self.play_worker())
-        self.discord_task = asyncio.create_task(self.client.start(self.token))
+        self.discord_task = asyncio.create_task(self._start_discord())
         self.discord_task.add_done_callback(self._discord_finished)
         self.start_watchdog = asyncio.create_task(self._check_discord_startup())
         self.log('Веб-сервер запущен. Подключаем бота…')
+    async def _start_discord(self):
+        try:
+            timeout = aiohttp.ClientTimeout(total=12)
+            headers = {'Authorization': f'Bot {self.token{'}'}'}
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get('https://discord.com/api/v10/users/@me', headers=headers) as response:
+                    if response.status == 401:
+                        self.log('Токен неверный или устарел. Скопируйте новый Bot Token в Developer Portal → Bot.')
+                        return
+                    if response.status != 200:
+                        self.log(f'Discord API вернул ошибку {response.status}.')
+                        return
+            self.log('Токен принят Discord. Подключаем бота к голосовому каналу…')
+            await self.client.start(self.token)
+        except asyncio.TimeoutError:
+            self.log('Discord API не отвечает из этой программы. Проверьте VPN или защиту антивируса.')
+        except Exception as exc:
+            self.log(f'Не удалось проверить Discord API: {exc}')
     async def _check_discord_startup(self):
         try:
             await asyncio.wait_for(self.ready.wait(), timeout=20)
