@@ -70,21 +70,19 @@ jobs:
       - name: Prepare offline voice folder
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force dist/voices | Out-Null
-          Copy-Item voices/v5_6_ru.pt dist/voices/v5_6_ru.pt -Force
-          Copy-Item voices/SILERO_MODEL_NOTICE.txt dist/voices/SILERO_MODEL_NOTICE.txt -Force
+          New-Item -ItemType Directory -Force dist/VoiceReaderPro/voices | Out-Null
+          Copy-Item voices/v5_6_ru.pt dist/VoiceReaderPro/voices/v5_6_ru.pt -Force
+          Copy-Item voices/SILERO_MODEL_NOTICE.txt dist/VoiceReaderPro/voices/SILERO_MODEL_NOTICE.txt -Force
       - name: Confirm output
         shell: pwsh
         run: |
-          if (!(Test-Path dist/VoiceReaderPro.exe)) { throw 'EXE was not generated' }
-          if ((Get-Item dist/VoiceReaderPro.exe).Length -lt 100MB) { throw 'EXE is unexpectedly small for the local PyTorch runtime' }
-          if (!(Test-Path dist/voices/v5_6_ru.pt)) { throw 'Local Silero voice model was not copied beside the EXE' }
-          if ((Get-Item dist/voices/v5_6_ru.pt).Length -lt 50000000) { throw 'Local Silero model is unexpectedly small' }
+          if (!(Test-Path dist/VoiceReaderPro/VoiceReaderPro.exe)) { throw 'EXE was not generated in the app folder' }
+          if ((Get-Item dist/VoiceReaderPro/VoiceReaderPro.exe).Length -lt 1MB) { throw 'EXE launcher is unexpectedly small' }
+          if (!(Test-Path dist/VoiceReaderPro/voices/v5_6_ru.pt)) { throw 'Local Silero voice model was not copied beside the EXE' }
+          if ((Get-Item dist/VoiceReaderPro/voices/v5_6_ru.pt).Length -lt 50000000) { throw 'Local Silero model is unexpectedly small' }
       - uses: actions/upload-artifact@v4
         with:
           name: VoiceReaderPro-Offline-Windows
-          path: |
-            dist/VoiceReaderPro.exe
-            dist/voices/
+          path: dist/VoiceReaderPro/
           if-no-files-found: error
           retention-days: 14
