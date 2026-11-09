@@ -1,10 +1,11 @@
 # PyInstaller one-file Windows build. The workflow supplies tools/*.exe.
-# davey is a native Rust extension and must be collected explicitly for DAVE voice encryption.
+# Collect both DAVE's native Rust extension and discord.py's bundled libopus DLL.
 from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
 root = Path(SPECPATH)
 davey_datas, davey_binaries, davey_hiddenimports = collect_all("davey")
+discord_datas, discord_binaries, discord_hiddenimports = collect_all("discord")
 
 a = Analysis(
     [str(root / "voice_reader" / "app.py")],
@@ -12,14 +13,14 @@ a = Analysis(
     binaries=[
         (str(root / "tools" / "ffmpeg.exe"), "."),
         (str(root / "tools" / "cloudflared.exe"), "."),
-    ] + davey_binaries,
+    ] + davey_binaries + discord_binaries,
     datas=[
         (str(root / "voice_reader" / "static"), "voice_reader/static"),
-    ] + davey_datas,
+    ] + davey_datas + discord_datas,
     hiddenimports=[
         "discord.opus",
         "discord.voice_client",
-    ] + davey_hiddenimports,
+    ] + davey_hiddenimports + discord_hiddenimports,
     hookspath=[],
     excludes=[],
     noarchive=False,
