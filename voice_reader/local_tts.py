@@ -16,18 +16,32 @@ SAMPLE_RATE = 48000
 VOICE_PRESETS = {
     "normal": {
         "label": "Обычный мужской",
+        "engine": "silero",
         "speaker": "aidar",
         "ffmpeg_options": "-af volume=1.15",
     },
     "pudge": {
         "label": "Низкий мужской (не оригинал Пуджа)",
+        "engine": "silero",
         "speaker": "eugene",
         "ffmpeg_options": "-af bass=g=5,volume=1.2",
     },
     "cute_girl": {
         "label": "Милая девушка",
+        "engine": "silero",
         "speaker": "xenia",
         "ffmpeg_options": "-af volume=1.15",
+    },
+    "armenian": {
+        "label": "Армянский акцент",
+        "engine": "armenian",
+        "ffmpeg_options": "-af volume=1.1",
+    },
+    "pop": {
+        "label": "Молодой поп-голос",
+        "engine": "teratts",
+        "speaker": "ru_m5",
+        "ffmpeg_options": "-af volume=1.1",
     },
 }
 
