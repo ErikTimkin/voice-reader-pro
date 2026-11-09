@@ -59,6 +59,8 @@ jobs:
           Write-Host "Downloaded local Silero model: $modelSize bytes"
       - name: Check source
         run: python -m compileall -q voice_reader tests
+      - name: Test web voice selector and Enter behavior
+        run: python tests/web_voice_ui_smoke.py
       - name: Verify DAVE 0.2 and Opus voice support
         run: python tests/dave_compat_smoke.py
       - name: Test local Silero voices and event loop
