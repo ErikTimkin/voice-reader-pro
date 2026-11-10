@@ -136,6 +136,10 @@ class StreamingPCMSource(discord.AudioSource):
     def read(self):
         frame = self._frames.get()
         if frame is None:
+            if self._error is not None:
+                raise RuntimeError(
+                    f"Потоковая генерация армянского голоса завершилась с ошибкой: {self._error}"
+                ) from self._error
             return b""
         self._frames_read += 1
         return frame
@@ -442,6 +446,35 @@ class VoiceService:
         message = 'Принято. Начинаю озвучивание.' if queue_size == 1 else f'Добавлено в очередь: {queue_size}.'
         return web.json_response({'message': message})
 
+    async def _wait_for_voice_encryption(self, voice_client, timeout=15.0):
+        """Wait for Discord DAVE key negotiation before starting voice packets."""
+        state = voice_client._connection
+        protocol = int(getattr(state, "dave_protocol_version", 0) or 0)
+        if protocol <= 0 or getattr(state, "dave_downgraded", False):
+            return
+
+        self.log("Discord подключён. Ожидаю завершения DAVE/E2EE-перехода перед отправкой аудио…")
+        deadline = asyncio.get_running_loop().time() + timeout
+        while asyncio.get_running_loop().time() < deadline:
+            if not voice_client.is_connected():
+                raise RuntimeError("Discord отключил голосовое соединение во время DAVE-перехода.")
+            session = getattr(state, "dave_session", None)
+            if (
+                bool(getattr(state, "can_encrypt", False))
+                and session is not None
+                and bool(getattr(session, "can_encrypt", False))
+            ):
+                self.log("DAVE/E2EE готов: Discord разрешил шифрование голосовых пакетов.")
+                return
+            await asyncio.sleep(0.25)
+
+        session = getattr(state, "dave_session", None)
+        raise TimeoutError(
+            "Discord не завершил DAVE/E2EE за отведённое время "
+            f"(protocol={protocol}, session_ready={getattr(session, 'ready', None)}, "
+            f"session_can_encrypt={getattr(session, 'can_encrypt', None)})."
+        )
+
     async def play_worker(self):
         while True:
             item = await self.queue.get()
@@ -535,6 +568,7 @@ class VoiceService:
 
                 voice_client = self.voice_client
                 connection_state = voice_client._connection
+                await self._wait_for_voice_encryption(voice_client)
                 dave_session = getattr(connection_state, 'dave_session', None)
                 self.log(
                     'Голосовой тракт: '
