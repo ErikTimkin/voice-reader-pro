@@ -41,6 +41,7 @@ class App:
         self.events = queue.Queue()
         self.thread = self.loop = self.service = None
         self.pasting = False
+        self.closing = False
         DATA.mkdir(parents=True, exist_ok=True)
         cfg = self.load()
 
@@ -169,6 +170,8 @@ class App:
         log_header = ttk.Frame(log_card, style='Card.TFrame')
         log_header.pack(fill='x', pady=(0, 9))
         ttk.Label(log_header, text='Журнал работы', style='CardTitle.TLabel').pack(side='left')
+        ttk.Button(log_header, text='Копировать журнал', style='Copy.TButton',
+                   command=self.copy_log).pack(side='right', padx=(10, 0))
         ttk.Label(log_header, text='События Discord · TTS · сервера',
                   style='Muted.TLabel').pack(side='right')
 
@@ -189,6 +192,8 @@ class App:
             font=('Consolas', 9),
         )
         self.log.pack(fill='both', expand=True)
+        self.log.bind('<Control-KeyPress>', self.handle_log_control)
+        self.log.bind('<Button-3>', self.show_log_menu)
 
         footer = ttk.Label(
             outer,
@@ -307,16 +312,27 @@ class App:
     def run(self, *args):
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
-        self.loop.run_until_complete(self.run_async(*args))
+        try:
+            self.loop.run_until_complete(self.run_async(*args))
+        finally:
+            try:
+                self.loop.run_until_complete(self.loop.shutdown_asyncgens())
+            except Exception:
+                pass
+            self.loop.close()
 
     async def run_async(self, token, guild, channel, voice, ffmpeg, cloudflared):
         try:
             self.service = VoiceService(token, guild, channel, voice, ffmpeg, self.emit, VOICE_MODEL)
             await self.service.start()
+            if self.closing:
+                return
             p = await asyncio.create_subprocess_exec(cloudflared, 'tunnel', '--url',
                 'http://127.0.0.1:8765', '--no-autoupdate',
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
             self.service.tunnel = p
+            if self.closing and p.returncode is None:
+                p.terminate()
             while True:
                 line = (await p.stdout.readline()).decode(errors='replace')
                 if not line:
@@ -393,8 +409,71 @@ class App:
         event.widget = widget
         self.paste_entry(event)
 
+    def copy_log(self, selection_only=False):
+        try:
+            if selection_only and self.log.tag_ranges('sel'):
+                content = self.log.get('sel.first', 'sel.last')
+            else:
+                content = self.log.get('1.0', 'end-1c')
+            if not content:
+                return 'break'
+            self.root.clipboard_clear()
+            self.root.clipboard_append(content)
+            self.status.set('Журнал скопирован')
+        except tk.TclError as exc:
+            messagebox.showerror(APP_NAME, f'Не удалось скопировать журнал: {exc}')
+        return 'break'
+
+    def select_all_logs(self):
+        self.log.tag_add('sel', '1.0', 'end-1c')
+        self.log.mark_set('insert', 'end-1c')
+        self.log.see('insert')
+        return 'break'
+
+    def handle_log_control(self, event):
+        key = event.keysym.lower()
+        if key == 'c':
+            return self.copy_log(selection_only=True)
+        if key == 'a':
+            return self.select_all_logs()
+        return None
+
+    def show_log_menu(self, event):
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label='Копировать выделенное', command=lambda: self.copy_log(selection_only=True))
+        menu.add_command(label='Копировать весь журнал', command=self.copy_log)
+        menu.add_command(label='Выделить всё', command=self.select_all_logs)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+        return 'break'
+
     def close(self):
-        self.stop_service()
+        if self.closing:
+            return
+        self.closing = True
+        self.status.set('Закрытие…')
+        self.start.configure(state='disabled')
+        self.stop.configure(state='disabled')
+
+        # Terminating the tunnel lets run_async leave its stdout loop. Its
+        # finally block then closes Discord, the local web server and tasks.
+        try:
+            if self.service and self.service.tunnel and self.service.tunnel.returncode is None:
+                self.service.tunnel.terminate()
+        except Exception:
+            pass
+
+        if self.thread and self.thread.is_alive():
+            self.root.after(100, self._finish_close)
+        else:
+            self.root.destroy()
+
+    def _finish_close(self):
+        if self.thread and self.thread.is_alive():
+            self.root.after(100, self._finish_close)
+            return
         self.root.destroy()
 
 def run_frozen_voice_smoke_test(preset: str) -> int:
