@@ -5,15 +5,12 @@
 ## Голоса
 
 - Silero v5.6: обычный мужской и мягкий женский голоса.
-- Pocket TTS Armenian by mnjoyan: русский текст с восточноармянским мужским тембром. Используется tri-language модель Armenian + Russian + English и короткий синтетический мужской армянский референс из CC0-набора. Русские числа нормализуются русским модулем приложения; армянский языковой нормализатор не подключается к русскому тексту.
-- TeraTTSv2 by TeraSpace: отдельный молодой мужской русский голос ru_m5. Это самостоятельный синтезированный тембр, не имитация голоса какого-либо артиста.
+- TeraTTSv2 `ru_m5`: молодой мужской русский голос.
+- TeraTTSv2 `eng_m4`: мужской голос с английским голосовым референсом, который произносит русский текст с заметным иностранным акцентом. Это стилизованная иностранная манера произношения, а не конкретный реальный человек.
 
 ## Модели и атрибуция
 
-- TeraTTSv2 by TeraSpace: https://huggingface.co/TeraSpace/TeraTTSv2. Распространяется по условиям Open RAIL-M с дополнительным условием указания авторства для коммерческих интеграций. Полные файлы лицензии и уведомление RUAccent включены в пакет.
-- Armenian Pocket TTS fine-tune by mnjoyan: https://huggingface.co/mnjoyan/pocket-tts-armenian. Лицензия модели, указанная автором, — CC BY 4.0.
-- Синтетический армянский голосовой образец: https://huggingface.co/datasets/ErikMkrtchyan/Hy-Generated-audio-data-2. Страница набора указывает CC0 1.0.
-- Pocket TTS upstream code by Kyutai: MIT License.
+- TeraTTSv2 by TeraSpace: https://huggingface.co/TeraSpace/TeraTTSv2. Модель распространяется по условиям Open RAIL-M с дополнительным условием указания авторства для коммерческих интеграций. Файлы лицензии и уведомление RUAccent включены в пакет.
 - Silero voice model: см. приложенное уведомление voices/SILERO_MODEL_NOTICE.txt.
 
 Для коммерческого продукта, использующего TeraTTSv2, укажите в публичном описании: "Text-to-speech powered by TeraTTSv2 by TeraSpace" и дайте ссылку на модель.
