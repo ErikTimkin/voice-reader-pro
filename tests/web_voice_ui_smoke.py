@@ -48,7 +48,8 @@ def main() -> None:
             raise AssertionError(f"Desktop UI feature is missing: {fragment}")
     if "'voice'" in app or "ГОЛОС ПО УМОЛЧАНИЮ" in app or "VOICE_PRESET_LABELS" in app:
         raise AssertionError("Voice selection must be available only in the browser UI")
-    if "state='disabled'" in app:
+    log_widget = app.split("self.log = tk.Text(", 1)[1].split("        )", 1)[0]
+    if "state='disabled'" in log_widget or "state='normal'" not in log_widget:
         raise AssertionError("Log Text widget must remain selectable for copying")
 
     core = (ROOT / "voice_reader" / "core.py").read_text(encoding="utf-8")
