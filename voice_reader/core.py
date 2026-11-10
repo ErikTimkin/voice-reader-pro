@@ -297,10 +297,9 @@ class VoiceService:
     async def _preload_armenian_tts(self):
         """Load the Armenian-accent model before its first request, off the Discord loop."""
         try:
-            await self.tts_ready.wait()
-            if self.tts_error:
-                return
-            # Let Discord finish connecting and avoid competing with the initial Silero warm-up.
+            # Pocket TTS is an independent engine: never wait for Silero and
+            # never skip Armenian initialization because Silero failed.
+            # Keep the short delay only to let Discord finish connecting.
             await asyncio.sleep(2)
             started = time.perf_counter()
             await asyncio.to_thread(self.armenian_tts.load)
