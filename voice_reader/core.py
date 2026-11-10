@@ -3,7 +3,9 @@ import array
 import logging
 import math
 import os
+import queue
 import re
+import threading
 import tempfile
 import time
 from pathlib import Path
@@ -72,6 +74,68 @@ class DiagnosticFFmpegPCMAudio(discord.FFmpegPCMAudio):
             elif rms < 80:
                 self._voice_log('ПРЕДУПРЕЖДЕНИЕ: уровень PCM очень низкий; возможна почти полная тишина.')
         return data
+
+
+class StreamingPCMSource(discord.AudioSource):
+    """Thread-safe 48 kHz stereo PCM source fed by Pocket TTS chunks."""
+
+    FRAME_BYTES = 3840  # 20 ms, 48 kHz, 16-bit, stereo
+
+    def __init__(self, logger):
+        self.log = logger
+        self._frames = queue.Queue(maxsize=150)
+        self.stop_event = threading.Event()
+        self._finished = False
+        self._error = None
+        self._bytes = 0
+        self._frames_read = 0
+
+    def push_mono_24k(self, samples):
+        import numpy as np
+        if self.stop_event.is_set():
+            return
+        samples = np.asarray(samples, dtype=np.float32).reshape(-1)
+        if samples.size < 2:
+            return
+        # Linear 2x resampling is sufficient for voice-band PCM and avoids
+        # adding a heavy audio dependency to the offline Windows package.
+        source_x = np.arange(samples.size, dtype=np.float32)
+        target_x = np.arange(samples.size * 2, dtype=np.float32) * 0.5
+        upsampled = np.interp(target_x, source_x, samples).astype(np.float32)
+        pcm_mono = (np.clip(upsampled, -1.0, 1.0) * 32767.0).astype(np.int16)
+        stereo = np.repeat(pcm_mono, 2)
+        payload = stereo.tobytes()
+        for offset in range(0, len(payload), self.FRAME_BYTES):
+            if self.stop_event.is_set():
+                return
+            frame = payload[offset:offset + self.FRAME_BYTES]
+            if len(frame) < self.FRAME_BYTES:
+                frame += b"\\x00" * (self.FRAME_BYTES - len(frame))
+            self._frames.put(frame)
+            self._bytes += len(frame)
+
+    def finish(self, error=None):
+        if self._finished:
+            return
+        self._finished = True
+        self._error = error
+        self._frames.put(None)
+
+    def read(self):
+        frame = self._frames.get()
+        if frame is None:
+            return b""
+        self._frames_read += 1
+        return frame
+
+    def is_opus(self):
+        return False
+
+    def cleanup(self):
+        self.stop_event.set()
+        if not self._finished:
+            self.finish()
+
 
 class VoiceService:
     def __init__(self, token, guild_id, channel_id, voice, ffmpeg, logger, tts_model_path):
@@ -431,13 +495,31 @@ class VoiceService:
                     except RuntimeError:
                         pass
 
-                source = DiagnosticFFmpegPCMAudio(
-                    file_name,
-                    executable=self.ffmpeg,
-                    logger=self.log,
-                    before_options='-nostdin',
-                    options=profile.get('ffmpeg_options', ''),
-                )
+                if engine == "armenian":
+                    source = StreamingPCMSource(self.log)
+                    def generate_armenian_stream():
+                        try:
+                            self.armenian_tts.stream_to_source(speech_text, source)
+                        except Exception as stream_error:
+                            source.finish(stream_error)
+                            self.log(
+                                f'Ошибка потокового армянского синтеза: '
+                                f'{type(stream_error).__name__}: {stream_error}'
+                            )
+                    threading.Thread(
+                        target=generate_armenian_stream,
+                        name="armenian-tts-stream",
+                        daemon=True,
+                    ).start()
+                    self.log('Армянская речь передаётся в Discord по мере генерации.')
+                else:
+                    source = DiagnosticFFmpegPCMAudio(
+                        file_name,
+                        executable=self.ffmpeg,
+                        logger=self.log,
+                        before_options='-nostdin',
+                        options=profile.get('ffmpeg_options', ''),
+                    )
                 try:
                     voice_client.play(source, after=playback_finished, signal_type='voice')
                 except Exception:
