@@ -29,6 +29,7 @@ async def main_async(source_voices: Path) -> None:
     for relative in (
         Path("armenian/armenian_tri.yaml"),
         Path("armenian/armenian_reference.wav"),
+        Path("armenian/armenian_voice_state.safetensors"),
         Path("armenian/tri_v1/model.safetensors"),
         Path("armenian/tri_v1/tokenizer_tri.model"),
         Path("teratts/teratts.py"),
