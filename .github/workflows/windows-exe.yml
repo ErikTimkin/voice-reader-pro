@@ -2,7 +2,7 @@ name: Build Windows EXE
 on:
   workflow_dispatch:
   push:
-    branches: [main, fix/armenian-pop-runtime]
+    branches: [main, fix/armenian-pop-runtime, fix/audio-level-log-copy-close]
 permissions:
   contents: read
 concurrency:
