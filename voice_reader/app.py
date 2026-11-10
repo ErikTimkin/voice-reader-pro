@@ -343,7 +343,7 @@ class App:
                             self.emit(decoded)
                         if 'trycloudflare.com' in decoded:
                             import re
-                            url = re.search(r'https://[^\\s]+trycloudflare\\.com', decoded)
+                            url = re.search(r'https://[^\s]+trycloudflare\.com', decoded)
                             if url:
                                 self.events.put(('url', url.group(0)))
 
@@ -376,7 +376,11 @@ class App:
 
                 if not self.stop_requested.is_set():
                     self.emit(f'Повторное подключение Cloudflare Tunnel через {retry_delay} сек…')
-                    await asyncio.sleep(retry_delay)
+                    remaining = retry_delay
+                    while remaining > 0 and not self.stop_requested.is_set():
+                        interval = min(0.25, remaining)
+                        await asyncio.sleep(interval)
+                        remaining -= interval
                     retry_delay = min(retry_delay * 2, 30)
         except Exception as e:
             self.events.put(('error', str(e)))
