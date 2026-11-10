@@ -1,7 +1,19 @@
-"""The two offline voices kept in the compact build."""
+"""Voice presets for Voice Reader Pro."""
 from __future__ import annotations
 
 VOICE_PRESETS = {
+    "normal": {
+        "label": "Обычный мужской",
+        "engine": "silero",
+        "speaker": "aidar",
+        "ffmpeg_options": "-af volume=1.15",
+    },
+    "cute_girl": {
+        "label": "Милая девушка",
+        "engine": "silero",
+        "speaker": "xenia",
+        "ffmpeg_options": "-af volume=1.15",
+    },
     "armenian": {
         "label": "Армянский акцент",
         "engine": "armenian",
@@ -18,21 +30,18 @@ VOICE_PRESETS = {
 VOICE_PRESET_LABELS = {key: value["label"] for key, value in VOICE_PRESETS.items()}
 VOICE_LABEL_TO_PRESET = {value["label"]: key for key, value in VOICE_PRESETS.items()}
 
-# Older config files may still contain these presets. Map them to the new default
-# instead of failing when somebody upgrades from an older archive.
+# Keep old saved settings usable. The removed Pudge entry falls back to default male.
 LEGACY_VOICE_IDS = {
-    "normal": "armenian",
-    "dmitry": "armenian",
-    "ru-RU-DmitryNeural": "armenian",
-    "pudge": "armenian",
-    "cute_girl": "armenian",
-    "svetlana": "armenian",
-    "ru-RU-SvetlanaNeural": "armenian",
-    "dariya": "armenian",
-    "ru-RU-DariyaNeural": "armenian",
+    "dmitry": "normal",
+    "ru-RU-DmitryNeural": "normal",
+    "pudge": "normal",
+    "svetlana": "cute_girl",
+    "ru-RU-SvetlanaNeural": "cute_girl",
+    "dariya": "cute_girl",
+    "ru-RU-DariyaNeural": "cute_girl",
 }
 
 
 def resolve_voice_profile(selection: str | None) -> dict:
-    key = LEGACY_VOICE_IDS.get(selection or "", selection or "armenian")
-    return dict(VOICE_PRESETS.get(key, VOICE_PRESETS["armenian"]))
+    key = LEGACY_VOICE_IDS.get(selection or "", selection or "normal")
+    return dict(VOICE_PRESETS.get(key, VOICE_PRESETS["normal"]))
