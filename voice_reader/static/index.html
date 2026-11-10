@@ -73,7 +73,7 @@
     }
     .section-title { font-size:17px;font-weight:700;letter-spacing:-.025em; }
     .section-sub { color:var(--secondary);font-size:12px; }
-    .voices { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;margin-bottom:29px; }
+    .voices { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px;margin-bottom:29px; }
     .voice {
       min-height:113px;padding:15px 15px 14px;border:1px solid var(--line);border-radius:17px;
       background:rgba(255,255,255,.78);color:var(--ink);text-align:left;cursor:pointer;
@@ -91,6 +91,7 @@
       width:32px;height:32px;display:grid;place-items:center;border-radius:10px;
       background:#f0f0f2;color:#333338;font-size:17px;
     }
+    .voice.pink .voice-symbol { color:#b84e7d;background:#fff0f6; }
     .voice.armenian .voice-symbol { color:#236f74;background:#eaf7f5; }
     .voice.pop .voice-symbol { color:#7655bd;background:#f2efff; }
     .selection {
@@ -180,7 +181,17 @@
       </div>
 
       <div class="voices" role="group" aria-label="Доступные голоса">
-        <button class="voice armenian selected" type="button" data-voice="armenian" aria-pressed="true">
+        <button class="voice selected" type="button" data-voice="normal" aria-pressed="true">
+          <span class="voice-top"><span class="voice-symbol">◖</span><span class="selection">✓</span></span>
+          <span class="voice-name">Обычный мужской</span>
+          <span class="voice-desc">Спокойный и нейтральный</span>
+        </button>
+        <button class="voice pink" type="button" data-voice="cute_girl" aria-pressed="false">
+          <span class="voice-top"><span class="voice-symbol">✳</span><span class="selection">✓</span></span>
+          <span class="voice-name">Милая девушка</span>
+          <span class="voice-desc">Мягкий женский голос</span>
+        </button>
+        <button class="voice armenian" type="button" data-voice="armenian" aria-pressed="false">
           <span class="voice-top"><span class="voice-symbol">Ա</span><span class="selection">✓</span></span>
           <span class="voice-name">Армянский акцент</span>
           <span class="voice-desc">Русская речь с восточноармянским тембром</span>
