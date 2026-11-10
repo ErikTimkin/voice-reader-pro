@@ -10,16 +10,12 @@ from voice_reader.voice_profiles import VOICE_PRESETS
 
 def main() -> None:
     if set(VOICE_PRESETS) != {"normal", "female", "cute_girl", "armenian", "jelly_bear"}:
-        raise AssertionError(f"Expected male, female, cute and Armenian voices: {list(VOICE_PRESETS)}")
-    assert normalize_voice_key("normal") == "normal"
-    assert normalize_voice_key("female") == "female"
-    assert normalize_voice_key("cute_girl") == "cute_girl"
-    assert normalize_voice_key("armenian") == "armenian"
-    assert normalize_voice_key("jelly_bear") == "jelly_bear"
+        raise AssertionError(f"Expected five browser voice presets: {list(VOICE_PRESETS)}")
+    for voice in VOICE_PRESETS:
+        assert normalize_voice_key(voice) == voice
     assert VOICE_PRESETS["jelly_bear"]["speaker"] == "xenia"
     assert "asetrate=57120" in VOICE_PRESETS["jelly_bear"]["ffmpeg_options"]
     assert normalize_voice_key("pop") == "cute_girl"
-    # Old Pudge configs fall back to the regular male voice.
     assert normalize_voice_key("pudge") == "normal"
     assert VOICE_PRESETS["armenian"]["engine"] == "armenian"
     assert VOICE_PRESETS["female"]["speaker"] == "baya"
@@ -27,23 +23,12 @@ def main() -> None:
 
     page = (ROOT / "voice_reader" / "static" / "index.html").read_text(encoding="utf-8")
     required = [
-        'data-voice="normal"',
-        'data-voice="female"',
-        'data-voice="cute_girl"',
-        'data-voice="armenian"',
-        'data-voice="jelly_bear"',
-        "Желейный медведь",
-        'Обычный мужской',
-        'Обычный женский',
-        'Армянский акцент',
-        'Милый голос',
-        "event.key === 'Enter'",
-        "!event.shiftKey",
-        "JSON.stringify({text: text, voice: voice})",
-        "-apple-system",
-        "--page: #f5f5f7",
-        "pendingRequests",
-        "Отправить",
+        'data-voice="normal"', 'data-voice="female"', 'data-voice="cute_girl"',
+        'data-voice="armenian"', 'data-voice="jelly_bear"', "Желейный медведь",
+        'Обычный мужской', 'Обычный женский', 'Армянский акцент', 'Милый голос',
+        "event.key === 'Enter'", "!event.shiftKey",
+        "JSON.stringify({text: text, voice: voice})", "-apple-system",
+        "--page: #f5f5f7", "pendingRequests", "Отправить",
         "let selectedVoice = '__DEFAULT_VOICE__';",
         "card.dataset.voice === selectedVoice",
     ]
@@ -55,22 +40,26 @@ def main() -> None:
             raise AssertionError(f"Retired voice still appears in web UI: {retired}")
 
     app = (ROOT / "voice_reader" / "app.py").read_text(encoding="utf-8")
-    for fragment in ["#090d18", "Primary.TButton", "Журнал работы", "Voice Reader Pro", "rar$"]:
+    for fragment in ["#090d18", "Primary.TButton", "Журнал работы", "Voice Reader Pro",
+                     "rar$", "def copy_selected_log", "def clear_log",
+                     "self.log.bind('<Key>', self.protect_log)",
+                     "self.log.bind('<Button-3>', self.show_log_menu)"]:
         if fragment not in app:
-            raise AssertionError(f"Desktop dark theme is missing: {fragment}")
+            raise AssertionError(f"Desktop UI feature is missing: {fragment}")
+    if "'voice'" in app or "ГОЛОС ПО УМОЛЧАНИЮ" in app or "VOICE_PRESET_LABELS" in app:
+        raise AssertionError("Voice selection must be available only in the browser UI")
+    if "state='disabled'" in app:
+        raise AssertionError("Log Text widget must remain selectable for copying")
 
     core = (ROOT / "voice_reader" / "core.py").read_text(encoding="utf-8")
-    app = (ROOT / "voice_reader" / "app.py").read_text(encoding="utf-8")
     if "LocalSileroTTS" not in core or "v5_6_ru.pt" not in app:
         raise AssertionError("The default and female Silero voices must remain installed")
     if "RATE_WINDOW" in core or "RATE_COUNT" in core or "def allowed(" in core:
         raise AssertionError("Server-side per-minute request throttling is still enabled")
-    if "self.queue = asyncio.Queue()" not in core:
-        raise AssertionError("The message queue must not have a small fixed capacity")
-    if "self.queue.full()" in core:
-        raise AssertionError("Requests should not be rejected because the old queue capacity was reached")
+    if "self.queue = asyncio.Queue()" not in core or "self.queue.full()" in core:
+        raise AssertionError("The message queue must not reject requests due to a fixed capacity")
 
-    print("Apple-style web UI, Enter/Shift+Enter, concurrent sends, and no rate limit passed.")
+    print("Five browser voice presets, selectable/copyable desktop logs, and desktop UI passed.")
 
 
 if __name__ == "__main__":
