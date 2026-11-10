@@ -8,8 +8,14 @@ VOICE_PRESETS = {
         "speaker": "aidar",
         "ffmpeg_options": "-af volume=1.15",
     },
+    "female": {
+        "label": "Обычный женский",
+        "engine": "silero",
+        "speaker": "baya",
+        "ffmpeg_options": "-af volume=1.15",
+    },
     "cute_girl": {
-        "label": "Милая девушка",
+        "label": "Милый голос",
         "engine": "silero",
         "speaker": "xenia",
         "ffmpeg_options": "-af volume=1.15",
@@ -19,26 +25,22 @@ VOICE_PRESETS = {
         "engine": "armenian",
         "ffmpeg_options": "-af volume=1.1",
     },
-    "pop": {
-        "label": "Молодой поп-голос",
-        "engine": "teratts",
-        "speaker": "ru_m5",
-        "ffmpeg_options": "-af volume=1.1",
-    },
 }
 
 VOICE_PRESET_LABELS = {key: value["label"] for key, value in VOICE_PRESETS.items()}
 VOICE_LABEL_TO_PRESET = {value["label"]: key for key, value in VOICE_PRESETS.items()}
 
-# Keep old saved settings usable. The removed Pudge entry falls back to default male.
+# Keep old saved settings usable. The removed Pudge/pop entries fall back to
+# the closest available voice instead of breaking saved configurations.
 LEGACY_VOICE_IDS = {
     "dmitry": "normal",
     "ru-RU-DmitryNeural": "normal",
     "pudge": "normal",
-    "svetlana": "cute_girl",
-    "ru-RU-SvetlanaNeural": "cute_girl",
-    "dariya": "cute_girl",
-    "ru-RU-DariyaNeural": "cute_girl",
+    "pop": "cute_girl",
+    "svetlana": "female",
+    "ru-RU-SvetlanaNeural": "female",
+    "dariya": "female",
+    "ru-RU-DariyaNeural": "female",
 }
 
 
