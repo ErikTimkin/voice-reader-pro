@@ -243,7 +243,12 @@
     const notice = document.querySelector('#notice');
     const counter = document.querySelector('#counter');
     const voiceCards = [...document.querySelectorAll('[data-voice]')];
-    let selectedVoice = 'normal';
+    let selectedVoice = '__DEFAULT_VOICE__';
+    for (const card of voiceCards) {
+      const active = card.dataset.voice === selectedVoice;
+      card.classList.toggle('selected', active);
+      card.setAttribute('aria-pressed', String(active));
+    }
     let pendingRequests = 0;
 
     function setNotice(text, kind = '') {
