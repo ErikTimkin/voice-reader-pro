@@ -27,8 +27,17 @@ async def main_async() -> None:
             profile["speaker"],
             target,
         )
-        if size < 2048 or duration < 0.25:
-            raise AssertionError(f"{preset}: suspicious audio output size={size}, duration={duration}")
+        import numpy as np
+        import wave
+        with wave.open(str(target), "rb") as audio:
+            samples = np.frombuffer(audio.readframes(audio.getnframes()), dtype=np.int16).astype(np.float64)
+        peak = float(np.max(np.abs(samples))) if samples.size else 0.0
+        rms = float(np.sqrt(np.mean(samples * samples))) if samples.size else 0.0
+        if size < 2048 or duration < 0.25 or peak < 5000 or rms < 250:
+            raise AssertionError(
+                f"{preset}: suspicious audio output size={size}, duration={duration}, "
+                f"peak={peak:.0f}, RMS={rms:.1f}"
+            )
         target.unlink(missing_ok=True)
         print(f"{preset}: {expected_speaker}, {duration:.2f}s, {size} bytes")
 
