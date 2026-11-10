@@ -403,6 +403,33 @@ def prepare_armenian(root: Path, ffmpeg: Path) -> None:
 
     download_armenian_reference(root, ffmpeg)
 
+    # Precompute the speaker conditioning state during the Windows build.
+    # This removes the expensive audio-reference encoding from the user's first
+    # Armenian message; the packaged .safetensors state is portable.
+    from pocket_tts import TTSModel, export_model_state
+    import torch
+    torch.set_num_threads(max(1, min(6, __import__("os").cpu_count() or 2)))
+    runtime_config = dict(config)
+    runtime_config["weights_path"] = str(weights.resolve())
+    runtime_config["flow_lm"]["lookup_table"]["tokenizer_path"] = str(tokenizer.resolve())
+    with tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", suffix=".yaml",
+        prefix="voice-reader-armenian-build-", delete=False,
+    ) as temp_config:
+        yaml.safe_dump(runtime_config, temp_config, allow_unicode=True, sort_keys=False)
+        runtime_config_path = Path(temp_config.name)
+    try:
+        print("Precomputing Armenian speaker state for faster first use…", flush=True)
+        tts_model = TTSModel.load_model(config=str(runtime_config_path))
+        voice_state = tts_model.get_state_for_audio_prompt(str(target / "armenian_reference.wav"))
+        export_model_state(voice_state, target / "armenian_voice_state.safetensors")
+        del voice_state, tts_model
+    finally:
+        runtime_config_path.unlink(missing_ok=True)
+    state_file = target / "armenian_voice_state.safetensors"
+    if not state_file.is_file() or state_file.stat().st_size < 100:
+        raise RuntimeError("Failed to precompute portable Armenian speaker state.")
+
     (target / "ARMENIAN_MODEL_NOTICE.txt").write_text(
         "Model: mnjoyan/pocket-tts-armenian (tri_v1; Armenian + Russian + English).\n"
         "License declared by the model publisher: Creative Commons Attribution 4.0 (CC BY 4.0).\n"
