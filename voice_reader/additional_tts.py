@@ -261,6 +261,33 @@ class ArmenianAccentTTS:
             )
         return _write_audio_wav(audio, self.model.sample_rate, target_path)
 
+    def stream_to_source(self, text: str, source) -> None:
+        """Generate Armenian speech incrementally into a Discord PCM source."""
+        self.load()
+        prepared_text = normalize_russian_for_pocket_tts(text)
+        if not prepared_text:
+            raise RuntimeError("Для армянского голоса передан пустой текст.")
+        with self._synthesis_lock:
+            for chunk in self.model.generate_audio_stream(
+                self.voice_state,
+                prepared_text,
+                copy_state=True,
+                stop=source.stop_event,
+            ):
+                if source.stop_event.is_set():
+                    break
+                if hasattr(chunk, "detach"):
+                    samples = chunk.detach().to("cpu").numpy()
+                else:
+                    samples = np.asarray(chunk)
+                samples = np.asarray(samples, dtype=np.float32).reshape(-1)
+                if samples.size == 0:
+                    continue
+                # Pocket TTS emits 24 kHz mono. Discord PCM expects 48 kHz,
+                # 16-bit stereo, in exact 20 ms frames (3,840 bytes).
+                source.push_mono_24k(samples)
+        source.finish()
+
     def unload(self) -> None:
         if self.model is not None:
             self.log("Освобождаю память армянской модели…")
