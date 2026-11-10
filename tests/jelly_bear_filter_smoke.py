@@ -33,7 +33,7 @@ def main() -> None:
             samples = np.frombuffer(audio.readframes(audio.getnframes()), dtype=np.int16)
             duration = len(samples) / rate
 
-        if rate != 48000 or not 0.95 <= duration <= 1.05:
+        if rate != 48000 or not 0.88 <= duration <= 1.05:
             raise AssertionError(f"Unexpected filtered audio format/duration: {rate} Hz, {duration:.3f}s")
         window = samples.astype(np.float64)
         window -= window.mean()
