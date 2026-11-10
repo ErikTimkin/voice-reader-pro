@@ -39,6 +39,7 @@ class App:
         root.configure(bg='#090d18')
 
         self.events = queue.Queue()
+        self.stop_requested = threading.Event()
         self.thread = self.loop = self.service = None
         self.pasting = False
         DATA.mkdir(parents=True, exist_ok=True)
@@ -296,6 +297,7 @@ class App:
             self.save()
         except Exception as e:
             return messagebox.showerror(APP_NAME, f'Не удалось безопасно сохранить токен: {e}')
+        self.stop_requested.clear()
         self.start.configure(state='disabled')
         self.stop.configure(state='normal')
         self.status.set('Запуск…')
@@ -314,20 +316,68 @@ class App:
         try:
             self.service = VoiceService(token, guild, channel, voice, ffmpeg, self.emit, VOICE_MODEL)
             await self.service.start()
-            p = await asyncio.create_subprocess_exec(cloudflared, 'tunnel', '--url',
-                'http://127.0.0.1:8765', '--no-autoupdate',
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
-            self.service.tunnel = p
-            while True:
-                line = (await p.stdout.readline()).decode(errors='replace')
-                if not line:
-                    break
-                self.emit(line.strip())
-                if 'trycloudflare.com' in line:
-                    import re
-                    url = re.search(r'https://[^\s]+trycloudflare\.com', line)
-                    if url:
-                        self.events.put(('url', url.group(0)))
+            retry_delay = 2
+
+            # A quick Cloudflare tunnel is only the public web entry point.
+            # Its temporary process may exit independently of Discord/TTS;
+            # keep the local service and bot alive while reconnecting it.
+            while not self.stop_requested.is_set():
+                process = None
+                try:
+                    process = await asyncio.create_subprocess_exec(
+                        cloudflared,
+                        'tunnel', '--url', 'http://127.0.0.1:8765', '--no-autoupdate',
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                    )
+                    self.service.tunnel = process
+                    retry_delay = 2
+                    self.emit('Публичный Cloudflare Tunnel запущен.')
+
+                    while not self.stop_requested.is_set():
+                        line = await process.stdout.readline()
+                        if not line:
+                            break
+                        decoded = line.decode(errors='replace').strip()
+                        if decoded:
+                            self.emit(decoded)
+                        if 'trycloudflare.com' in decoded:
+                            import re
+                            url = re.search(r'https://[^\\s]+trycloudflare\\.com', decoded)
+                            if url:
+                                self.events.put(('url', url.group(0)))
+
+                    if self.stop_requested.is_set():
+                        break
+                    exit_code = await process.wait()
+                    self.emit(
+                        f'Cloudflare Tunnel завершился (код {exit_code}). '
+                        'Discord и локальный сервер остаются запущены; переподключаю туннель.'
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as tunnel_error:
+                    if self.stop_requested.is_set():
+                        break
+                    self.emit(
+                        f'Ошибка Cloudflare Tunnel: {type(tunnel_error).__name__}: {tunnel_error}. '
+                        'Повторяю подключение.'
+                    )
+                finally:
+                    if process is not None and process.returncode is None:
+                        process.terminate()
+                        try:
+                            await asyncio.wait_for(process.wait(), timeout=5)
+                        except asyncio.TimeoutError:
+                            process.kill()
+                            await process.wait()
+                    if self.service and self.service.tunnel is process:
+                        self.service.tunnel = None
+
+                if not self.stop_requested.is_set():
+                    self.emit(f'Повторное подключение Cloudflare Tunnel через {retry_delay} сек…')
+                    await asyncio.sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, 30)
         except Exception as e:
             self.events.put(('error', str(e)))
         finally:
@@ -335,14 +385,12 @@ class App:
                 await self.service.stop()
 
     def stop_service(self):
-        self.status.set('Остановка…')
-        if self.loop and self.service:
-            if self.service.tunnel:
-                self.service.tunnel.terminate()
-            asyncio.run_coroutine_threadsafe(self.service.stop(), self.loop)
+        self.stop_requested.set()
+        if self.service and self.service.tunnel and self.service.tunnel.returncode is None:
+            self.service.tunnel.terminate()
+        self.status.set('Остановлено')
         self.start.configure(state='normal')
         self.stop.configure(state='disabled')
-        self.status.set('Остановлено')
 
     def copy(self):
         self.root.clipboard_clear()
