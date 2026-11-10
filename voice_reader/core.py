@@ -274,7 +274,16 @@ class VoiceService:
             self.log(f'Соединение Discord завершилось с ошибкой: {type(exc).__name__}: {exc}')
 
     async def index(self, request):
-        return web.FileResponse(Path(__file__).parent / 'static' / 'index.html')
+        page_path = Path(__file__).parent / 'static' / 'index.html'
+        page = page_path.read_text(encoding='utf-8')
+        default_voice = self.voice if self.voice in VOICE_PRESETS else 'normal'
+        page = page.replace('__DEFAULT_VOICE__', default_voice)
+        return web.Response(
+            text=page,
+            content_type='text/html',
+            charset='utf-8',
+            headers={'Cache-Control': 'no-store'},
+        )
 
     async def speak(self, request):
         request_started = time.perf_counter()
