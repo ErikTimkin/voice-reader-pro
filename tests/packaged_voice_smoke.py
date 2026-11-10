@@ -11,7 +11,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from voice_reader.additional_tts import ArmenianAccentTTS, TeraPopTTS
+from voice_reader.additional_tts import ArmenianAccentTTS
 
 
 def verify_wav(path: Path, minimum_bytes: int = 5_000) -> None:
@@ -32,13 +32,6 @@ async def main_async(source_voices: Path) -> None:
         Path("armenian/armenian_voice_state.safetensors"),
         Path("armenian/tri_v1/model.safetensors"),
         Path("armenian/tri_v1/tokenizer_tri.model"),
-        Path("teratts/teratts.py"),
-        Path("teratts/models/text_encoder.onnx"),
-        Path("teratts/models/duration_predictor.onnx"),
-        Path("teratts/models/sampler_distilled_cfg3_8step.onnx"),
-        Path("teratts/models/vocoder.onnx"),
-        Path("teratts/styles/ru_m5/style_ttl.npy"),
-        Path("teratts/styles/ru_m5/style_dp.npy"),
     ):
         if not (source_voices / relative).is_file():
             raise AssertionError(f"Packaged voice resource is missing: {relative}")
@@ -57,23 +50,6 @@ async def main_async(source_voices: Path) -> None:
         relocated = Path(temp) / "portable-install" / "voices"
         relocated.mkdir(parents=True)
         shutil.copytree(source_voices / "armenian", relocated / "armenian")
-        shutil.copytree(source_voices / "teratts", relocated / "teratts")
-
-        pop = TeraPopTTS(relocated / "teratts", lambda _message: None)
-        pop_wav = Path(temp) / "portable-pop.wav"
-        try:
-            await asyncio.to_thread(
-                pop.synthesize_to_wav,
-                "Проверка молодого поп-голоса после переноса папки.",
-                pop_wav,
-            )
-            verify_wav(pop_wav)
-        finally:
-            pop.unload()
-
-        import gc
-        gc.collect()
-
         armenian = ArmenianAccentTTS(
             relocated / "armenian", lambda _message: None
         )
@@ -88,7 +64,7 @@ async def main_async(source_voices: Path) -> None:
         finally:
             armenian.unload()
 
-    print("Both additional voices synthesized successfully from a relocated package.")
+    print("Armenian voice synthesized successfully from a relocated offline package.")
 
 
 def main() -> None:
