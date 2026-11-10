@@ -31,7 +31,8 @@ class LocalSileroTTS:
             if self.model is not None:
                 return
 
-            torch.set_num_threads(max(1, min(4, os.cpu_count() or 2)))
+            # Leave CPU headroom for Discord's gateway and voice heartbeats.
+            torch.set_num_threads(max(1, min(2, (os.cpu_count() or 2) // 4)))
             try:
                 torch.set_num_interop_threads(1)
             except RuntimeError:
@@ -77,6 +78,8 @@ class LocalSileroTTS:
         if peak < 1e-5:
             raise RuntimeError("Локальная модель вернула тишину.")
 
+        # Normalize each utterance so quiet model output is not nearly silent in Discord.
+        samples = samples * (0.85 / peak)
         samples = np.clip(samples, -1.0, 1.0)
         pcm = (samples * 32767.0).astype(np.int16)
 
