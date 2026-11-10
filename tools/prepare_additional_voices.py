@@ -386,12 +386,14 @@ def prepare_armenian(root: Path, ffmpeg: Path) -> None:
     if not base_config.is_file():
         raise FileNotFoundError(f"Pocket TTS base config not found: {base_config}")
     config = yaml.safe_load(base_config.read_text(encoding="utf-8"))
-    config["weights_path"] = str(weights.resolve())
+    # Runtime replaces these portable markers with paths relative to the
+    # installed voices/armenian folder. Never embed a CI runner's absolute path.
+    config["weights_path"] = "__VOICE_ASSET_ROOT__/tri_v1/model.safetensors"
     config.pop("weights_path_without_voice_cloning", None)
     lookup = config["flow_lm"]["lookup_table"]
     lookup["n_bins"] = 12000
     lookup["tokenizer"] = "sentencepiece"
-    lookup["tokenizer_path"] = str(tokenizer.resolve())
+    lookup["tokenizer_path"] = "__VOICE_ASSET_ROOT__/tri_v1/tokenizer_tri.model"
 
     config_path = target / "armenian_tri.yaml"
     config_path.write_text(
