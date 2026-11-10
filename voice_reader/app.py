@@ -252,6 +252,139 @@ class App:
         self.root.after(200, self.drain)
 
     def start_service(self):
+        # WinRAR's "Open" action launches an onedir build from a temporary folder
+        # and may only partially extract _internal, which breaks transformers/Pocket TTS.
+        if getattr(sys, 'frozen', False) and 'rar        token = self.fields['token'].get().strip()
+        guild = self.fields['guild_id'].get().strip()
+        channel = self.fields['channel_id'].get().strip()
+        if not token or not guild.isdigit() or not channel.isdigit():
+            return messagebox.showwarning(APP_NAME, 'Введите токен и числовые ID сервера и голосового канала.')
+        ffmpeg, cloudflared = tool('ffmpeg'), tool('cloudflared')
+        if not ffmpeg or not cloudflared:
+            return messagebox.showerror(APP_NAME, 'Не найдены встроенные FFmpeg или cloudflared.')
+        if not VOICE_MODEL.is_file():
+            return messagebox.showerror(
+                APP_NAME,
+                'Не найдена локальная модель голосов. Распакуйте ZIP целиком: рядом с VoiceReaderPro.exe должна быть папка voices.',
+            )
+        try:
+            self.save()
+        except Exception as e:
+            return messagebox.showerror(APP_NAME, f'Не удалось безопасно сохранить токен: {e}')
+        self.start.configure(state='disabled')
+        self.stop.configure(state='normal')
+        self.status.set('Запуск…')
+        selected_voice_label = self.fields['voice'].get().strip()
+        voice_preset = VOICE_LABEL_TO_PRESET.get(selected_voice_label, 'normal')
+        self.thread = threading.Thread(target=self.run,
+            args=(token, guild, channel, voice_preset, ffmpeg, cloudflared), daemon=True)
+        self.thread.start()
+
+    def run(self, *args):
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_until_complete(self.run_async(*args))
+
+    async def run_async(self, token, guild, channel, voice, ffmpeg, cloudflared):
+        try:
+            self.service = VoiceService(token, guild, channel, voice, ffmpeg, self.emit, VOICE_MODEL)
+            await self.service.start()
+            p = await asyncio.create_subprocess_exec(cloudflared, 'tunnel', '--url',
+                'http://127.0.0.1:8765', '--no-autoupdate',
+                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
+            self.service.tunnel = p
+            while True:
+                line = (await p.stdout.readline()).decode(errors='replace')
+                if not line:
+                    break
+                self.emit(line.strip())
+                if 'trycloudflare.com' in line:
+                    import re
+                    url = re.search(r'https://[^\s]+trycloudflare\.com', line)
+                    if url:
+                        self.events.put(('url', url.group(0)))
+        except Exception as e:
+            self.events.put(('error', str(e)))
+        finally:
+            if self.service:
+                await self.service.stop()
+
+    def stop_service(self):
+        self.status.set('Остановка…')
+        if self.loop and self.service:
+            if self.service.tunnel:
+                self.service.tunnel.terminate()
+            asyncio.run_coroutine_threadsafe(self.service.stop(), self.loop)
+        self.start.configure(state='normal')
+        self.stop.configure(state='disabled')
+        self.status.set('Остановлено')
+
+    def copy(self):
+        self.root.clipboard_clear()
+        self.root.clipboard_append(self.link.get())
+
+    def paste_entry(self, event=None):
+        widget = event.widget if event is not None else self.root.focus_get()
+        if widget is None:
+            return 'break'
+        try:
+            value = self.root.clipboard_get()
+        except tk.TclError:
+            return 'break'
+        try:
+            if widget.selection_present():
+                widget.delete('sel.first', 'sel.last')
+        except (tk.TclError, AttributeError):
+            pass
+        try:
+            widget.insert('insert', value)
+        except tk.TclError:
+            pass
+        return 'break'
+
+    def handle_entry_control(self, event):
+        # Windows keycode 86 is the physical V key, including Russian keyboard layout.
+        if event.state & 0x4 and event.keycode == 86:
+            return self.paste_entry(event)
+        return None
+
+    def show_entry_menu(self, event):
+        widget = event.widget
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label='Вставить', command=lambda: self.paste_entry_for(widget))
+        menu.add_command(label='Копировать', command=lambda: widget.event_generate('<<Copy>>'))
+        menu.add_command(label='Вырезать', command=lambda: widget.event_generate('<<Cut>>'))
+        menu.add_separator()
+        menu.add_command(label='Выделить всё', command=lambda: widget.select_range(0, 'end'))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+        return 'break'
+
+    def paste_entry_for(self, widget):
+        class PasteEvent:
+            pass
+        event = PasteEvent()
+        event.widget = widget
+        self.paste_entry(event)
+
+    def close(self):
+        self.stop_service()
+        self.root.destroy()
+
+if __name__ == '__main__':
+    App(tk.Tk()).root.mainloop()
+ in str(Path(sys.executable).resolve()).casefold():
+            messagebox.showerror(
+                APP_NAME,
+                'Программа запущена прямо из временной папки WinRAR.\\n\\n'
+                'Закройте её, вернитесь к ZIP-архиву, нажмите «Извлечь в…» '
+                'и запускайте VoiceReaderPro.exe только из полностью распакованной папки. '
+                'Рядом с EXE должны находиться папки _internal и voices.',
+            )
+            return
+
         token = self.fields['token'].get().strip()
         guild = self.fields['guild_id'].get().strip()
         channel = self.fields['channel_id'].get().strip()
