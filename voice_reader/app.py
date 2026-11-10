@@ -397,5 +397,67 @@ class App:
         self.stop_service()
         self.root.destroy()
 
+def run_frozen_voice_smoke_test(preset: str) -> int:
+    """Synthesize one voice through the actual PyInstaller executable."""
+    import gc
+    import tempfile
+    import traceback
+    import wave
+
+    from voice_reader.additional_tts import ArmenianAccentTTS, TeraPopTTS
+    from voice_reader.local_tts import LocalSileroTTS
+    from voice_reader.voice_profiles import resolve_voice_profile
+
+    log_path = Path(tempfile.gettempdir()) / f"VoiceReaderPro-smoke-{preset}.log"
+    output_path = Path(tempfile.gettempdir()) / f"VoiceReaderPro-smoke-{preset}.wav"
+
+    def log(message: str) -> None:
+        with log_path.open("a", encoding="utf-8") as stream:
+            stream.write(str(message) + "\\n")
+
+    log_path.write_text(f"Frozen EXE voice smoke test: {preset}\\n", encoding="utf-8")
+    output_path.unlink(missing_ok=True)
+    try:
+        profile = resolve_voice_profile(preset)
+        engine = profile["engine"]
+        sample_text = "Привет! Проверка голоса в собранном приложении Voice Reader Pro."
+
+        if engine == "silero":
+            tts = LocalSileroTTS(VOICE_MODEL, log)
+            tts.load()
+            size, duration = tts.synthesize_to_wav(sample_text, profile["speaker"], output_path)
+            del tts
+        elif engine == "armenian":
+            tts = ArmenianAccentTTS(VOICE_ASSETS / "armenian", log)
+            size, duration = tts.synthesize_to_wav(sample_text, output_path)
+            tts.unload()
+            del tts
+        elif engine == "teratts":
+            tts = TeraPopTTS(VOICE_ASSETS / "teratts", log)
+            size, duration = tts.synthesize_to_wav(sample_text, output_path)
+            tts.unload()
+            del tts
+        else:
+            raise RuntimeError(f"Unsupported voice engine in frozen test: {engine}")
+
+        with wave.open(str(output_path), "rb") as audio:
+            actual_duration = audio.getnframes() / float(audio.getframerate())
+        if size < 2048 or duration < 0.25 or actual_duration < 0.25:
+            raise RuntimeError(
+                f"Invalid generated audio: bytes={size}, duration={duration:.2f}s, "
+                f"wav_duration={actual_duration:.2f}s"
+            )
+        log(f"PASS: {preset}; engine={engine}; {duration:.2f}s; {size} bytes.")
+        return 0
+    except Exception:
+        log("FAIL: " + traceback.format_exc())
+        return 1
+    finally:
+        output_path.unlink(missing_ok=True)
+        gc.collect()
+
+
 if __name__ == '__main__':
+    if len(sys.argv) >= 3 and sys.argv[1] == '--voice-smoke-test':
+        raise SystemExit(run_frozen_voice_smoke_test(sys.argv[2]))
     App(tk.Tk()).root.mainloop()
