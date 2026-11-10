@@ -93,6 +93,26 @@ jobs:
           Copy-Item README.md dist/VoiceReaderPro/README.md -Force
       - name: Test voices from a relocated offline package
         run: python tests/packaged_voice_smoke.py --voices-dir dist/VoiceReaderPro/voices
+      - name: Smoke-test all four voices from the packaged EXE
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD 'dist/VoiceReaderPro/VoiceReaderPro.exe'
+          foreach ($voice in @('normal', 'cute_girl', 'armenian', 'pop')) {
+            $logPath = Join-Path $env:TEMP "VoiceReaderPro-smoke-$voice.log"
+            Remove-Item $logPath -Force -ErrorAction SilentlyContinue
+            Write-Host "Testing packaged EXE voice: $voice"
+            & $exe --voice-smoke-test $voice
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0) {
+              if (Test-Path $logPath) { Get-Content $logPath }
+              throw "Packaged EXE voice smoke test failed: $voice (exit code $exitCode)"
+            }
+            if (!(Test-Path $logPath) -or !(Select-String -Path $logPath -Pattern '^PASS:' -Quiet)) {
+              if (Test-Path $logPath) { Get-Content $logPath }
+              throw "Packaged EXE did not report successful synthesis: $voice"
+            }
+            Get-Content $logPath
+          }
       - name: Confirm output
         shell: pwsh
         run: |
