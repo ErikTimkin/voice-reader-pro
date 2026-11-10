@@ -74,6 +74,8 @@ jobs:
         run: python tests/silero_voice_smoke.py
       - name: Test additional voice WAV level normalization
         run: python tests/audio_export_smoke.py
+      - name: Test Armenian TTS Russian text normalization
+        run: python tests/armenian_text_smoke.py
       - name: Test Armenian accent and young pop voices
         run: python tests/additional_voice_smoke.py
       - name: Smoke-test PCM playback path
