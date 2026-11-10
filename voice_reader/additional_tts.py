@@ -220,7 +220,13 @@ class ArmenianAccentTTS:
 
                 # Pocket TTS is CPU-bound; allow up to six threads on modern
                 # desktop CPUs while keeping enough headroom for Discord.
-                torch.set_num_threads(max(1, min(6, os.cpu_count() or 2)))
+                # Leave CPU headroom for Discord's asyncio gateway and voice heartbeats.
+                torch.set_num_threads(max(1, min(2, os.cpu_count() or 2)))
+                try:
+                    torch.set_num_interop_threads(1)
+                except RuntimeError:
+                    # PyTorch only allows this before its inter-op pool is initialized.
+                    pass
                 self.log("Загружаю многоязычную модель Pocket TTS (армянский + русский)…")
                 model = TTSModel.load_model(config=str(runtime_config_path))
             finally:
