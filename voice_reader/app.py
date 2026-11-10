@@ -171,6 +171,8 @@ class App:
         ttk.Label(log_header, text='Журнал работы', style='CardTitle.TLabel').pack(side='left')
         ttk.Label(log_header, text='События Discord · TTS · сервера',
                   style='Muted.TLabel').pack(side='right')
+        ttk.Button(log_header, text='Копировать журнал', style='Copy.TButton',
+                   command=self.copy_log).pack(side='right', padx=(0, 10))
 
         self.log = tk.Text(
             log_card,
@@ -346,6 +348,12 @@ class App:
     def copy(self):
         self.root.clipboard_clear()
         self.root.clipboard_append(self.link.get())
+
+    def copy_log(self):
+        content = self.log.get('1.0', 'end-1c')
+        self.root.clipboard_clear()
+        self.root.clipboard_append(content)
+        self.root.update_idletasks()
 
     def paste_entry(self, event=None):
         widget = event.widget if event is not None else self.root.focus_get()
