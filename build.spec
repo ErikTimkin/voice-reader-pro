@@ -50,6 +50,9 @@ a = Analysis(
     hookspath=[],
     excludes=["torch.distributed", "torch.testing", "torch.utils.tensorboard"],
     noarchive=False,
+    # TeraTTS uses transformers' dynamic import-structure scanner, which walks
+    # the package directory on disk. Keep model package .pyc files external to PYZ.
+    module_collection_mode={"transformers.models": "pyc"},
 )
 pyz = PYZ(a.pure)
 exe = EXE(
