@@ -40,7 +40,7 @@ async def main_async() -> None:
     gc.collect()
 
     armenian_assets = ROOT / "voices" / "armenian"
-    for required in ("armenian_tri.yaml", "tri_v1/model.safetensors", "tri_v1/tokenizer_tri.model", "armenian_reference.wav"):
+    for required in ("armenian_tri.yaml", "tri_v1/model.safetensors", "tri_v1/tokenizer_tri.model", "armenian_reference.wav", "armenian_voice_state.safetensors"):
         if not (armenian_assets / required).is_file():
             raise AssertionError(f"Armenian voice resource is missing: {required}")
     armenian = ArmenianAccentTTS(armenian_assets, lambda _message: None)
