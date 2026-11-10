@@ -40,7 +40,7 @@ def main() -> None:
             raise AssertionError(f"Retired voice still appears in web UI: {retired}")
 
     app = (ROOT / "voice_reader" / "app.py").read_text(encoding="utf-8")
-    for fragment in ["#090d18", "Primary.TButton", "Журнал работы", "Voice Reader Pro",
+    for fragment in ["#090d18", "Primary.TButton", "Журнал работы", "Voice Reader Pro", "StatusCard.TFrame", "def _watch_service_status", "Работает · 127.0.0.1:8765",
                      "rar$", "def copy_selected_log", "def clear_log",
                      "self.log.bind('<Key>', self.protect_log)",
                      "self.log.bind('<Button-3>', self.show_log_menu)"]:
@@ -48,6 +48,12 @@ def main() -> None:
             raise AssertionError(f"Desktop UI feature is missing: {fragment}")
     if "'voice'" in app or "ГОЛОС ПО УМОЛЧАНИЮ" in app or "VOICE_PRESET_LABELS" in app:
         raise AssertionError("Voice selection must be available only in the browser UI")
+    if app.count("self.log = tk.Text(") != 1:
+        raise AssertionError("Desktop log widget must be created exactly once")
+    if "voice_preset" in app:
+        raise AssertionError("Desktop startup must use the browser-selected voice only")
+    if "args=(token, guild, channel, 'normal', ffmpeg, cloudflared)" not in app:
+        raise AssertionError("Desktop service must start with a valid default voice argument")
     log_widget = app.split("self.log = tk.Text(", 1)[1].split("        )", 1)[0]
     if "state='disabled'" in log_widget or "state='normal'" not in log_widget:
         raise AssertionError("Log Text widget must remain selectable for copying")

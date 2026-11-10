@@ -27,8 +27,9 @@ class App:
     def __init__(self, root):
         self.root = root
         root.title(APP_NAME)
-        root.geometry('920x760')
-        root.minsize(780, 650)
+        root.geometry('900x790')
+        root.minsize(800, 700)
+        root.option_add('*Font', ('Segoe UI', 9))
         root.configure(bg='#090d18')
 
         self.events = queue.Queue()
@@ -63,8 +64,13 @@ class App:
                         font=('Segoe UI', 9, 'bold'))
         style.configure('Muted.TLabel', background=PANEL, foreground=MUTED,
                         font=('Segoe UI', 9))
-        style.configure('Status.TLabel', background=PANEL, foreground='#a6f0d2',
+        style.configure('Status.TLabel', background=BG, foreground='#a6f0d2',
                         font=('Segoe UI', 9, 'bold'))
+        style.configure('StatusCard.TFrame', background='#172238')
+        style.configure('StatusName.TLabel', background='#172238', foreground='#8798b4',
+                        font=('Segoe UI', 8, 'bold'))
+        style.configure('StatusValue.TLabel', background='#172238', foreground='#e8efff',
+                        font=('Segoe UI', 10, 'bold'))
         style.configure('TEntry', fieldbackground=FIELD, foreground=TEXT,
                         insertcolor=TEXT, bordercolor=BORDER, lightcolor=BORDER,
                         darkcolor=BORDER, padding=9)
@@ -110,6 +116,19 @@ class App:
 
         self.fields = {}
 
+        status_strip = ttk.Frame(outer, style='Shell.TFrame')
+        status_strip.pack(before=card, fill='x', pady=(0, 14))
+        self.service_states = {
+            'discord': tk.StringVar(value='Не запущен'),
+            'web': tk.StringVar(value='Не запущен'),
+            'tunnel': tk.StringVar(value='Не создана'),
+        }
+        for key, title in (('discord', 'DISCORD'), ('web', 'ЛОКАЛЬНЫЙ СЕРВЕР'), ('tunnel', 'ПУБЛИЧНАЯ ССЫЛКА')):
+            tile = ttk.Frame(status_strip, style='StatusCard.TFrame', padding=(13, 10))
+            tile.pack(side='left', fill='x', expand=True, padx=(0, 8))
+            ttk.Label(tile, text=title, style='StatusName.TLabel').pack(anchor='w')
+            ttk.Label(tile, textvariable=self.service_states[key], style='StatusValue.TLabel').pack(anchor='w', pady=(3, 0))
+
         def add_field(parent, label, key, show='', row=0, column=0, columnspan=1):
             cell = ttk.Frame(parent, style='Card.TFrame')
             cell.grid(row=row, column=column, columnspan=columnspan,
@@ -117,7 +136,6 @@ class App:
             ttk.Label(cell, text=label, style='Field.TLabel').pack(anchor='w', pady=(0, 6))
             entry = ttk.Entry(cell, show=show)
             entry.insert(0, cfg.get(key, ''))
-            entry.pack(fill='x')
             entry.pack(fill='x')
             self.fields[key] = entry
 
@@ -158,7 +176,6 @@ class App:
         ttk.Button(log_header, text='Копировать журнал', style='Copy.TButton', command=self.copy_log).pack(side='right', padx=(0, 8))
 
         self.log = tk.Text(
-        self.log = tk.Text(
             log_card,
             height=12,
             state='normal',
@@ -174,7 +191,12 @@ class App:
             wrap='word',
             font=('Consolas', 9),
         )
-        self.log.pack(fill='both', expand=True)
+        log_body = ttk.Frame(log_card, style='Card.TFrame')
+        log_body.pack(fill='both', expand=True)
+        self.log.pack(in_=log_body, side='left', fill='both', expand=True)
+        log_scroll = ttk.Scrollbar(log_body, orient='vertical', command=self.log.yview)
+        log_scroll.pack(side='right', fill='y')
+        self.log.configure(yscrollcommand=log_scroll.set)
         self.log.bind('<Key>', self.protect_log)
         self.log.bind('<Control-a>', self.select_all_log)
         self.log.bind('<Control-A>', self.select_all_log)
@@ -229,6 +251,10 @@ class App:
                     self.link.delete(0, 'end')
                     self.link.insert(0, msg)
                     self.status.set('Работает')
+                elif typ == 'state':
+                    key, value = msg
+                    if key in self.service_states:
+                        self.service_states[key].set(value)
                 elif typ == 'error':
                     self.status.set('Ошибка')
                     messagebox.showerror(APP_NAME, msg)
@@ -281,13 +307,17 @@ class App:
         except Exception as e:
             return messagebox.showerror(APP_NAME, f'Не удалось безопасно сохранить токен: {e}')
         self.stop_requested.clear()
+        for key in self.service_states:
+            self.service_states[key].set('Запуск…')
+        self.link.delete(0, 'end')
         self.start.configure(state='disabled')
         self.stop.configure(state='normal')
         self.status.set('Запуск…')
-        self.thread = threading.Thread(target=self.run,
-            args=(token, guild, channel, 'normal', ffmpeg, cloudflared), daemon=True)
-        self.thread = threading.Thread(target=self.run,
-            args=(token, guild, channel, voice_preset, ffmpeg, cloudflared), daemon=True)
+        self.thread = threading.Thread(
+            target=self.run,
+            args=(token, guild, channel, 'normal', ffmpeg, cloudflared),
+            daemon=True,
+        )
         self.thread.start()
 
     def run(self, *args):
@@ -299,6 +329,9 @@ class App:
         try:
             self.service = VoiceService(token, guild, channel, voice, ffmpeg, self.emit, VOICE_MODEL)
             await self.service.start()
+            self.events.put(('state', ('web', 'Работает · 127.0.0.1:8765')))
+            self.events.put(('state', ('discord', 'Подключение…')))
+            status_task = asyncio.create_task(self._watch_service_status())
             retry_delay = 2
 
             # A quick Cloudflare tunnel is only the public web entry point.
@@ -314,6 +347,7 @@ class App:
                         stderr=asyncio.subprocess.STDOUT,
                     )
                     self.service.tunnel = process
+                    self.events.put(('state', ('tunnel', 'Подключение…')))
                     retry_delay = 2
                     self.emit('Публичный Cloudflare Tunnel запущен.')
 
@@ -329,6 +363,7 @@ class App:
                             url = re.search(r'https://[^\s]+trycloudflare\.com', decoded)
                             if url:
                                 self.events.put(('url', url.group(0)))
+                                self.events.put(('state', ('tunnel', 'Доступна')))
 
                     if self.stop_requested.is_set():
                         break
@@ -368,14 +403,30 @@ class App:
         except Exception as e:
             self.events.put(('error', str(e)))
         finally:
+            if 'status_task' in locals():
+                status_task.cancel()
+            for key in self.service_states:
+                self.events.put(('state', (key, 'Остановлен')))
             if self.service:
                 await self.service.stop()
+
+    async def _watch_service_status(self):
+        last_state = None
+        while not self.stop_requested.is_set():
+            ready = bool(self.service and self.service.ready.is_set())
+            value = 'Подключён' if ready else 'Ожидание Discord…'
+            if value != last_state:
+                self.events.put(('state', ('discord', value)))
+                last_state = value
+            await asyncio.sleep(1)
 
     def stop_service(self):
         self.stop_requested.set()
         if self.service and self.service.tunnel and self.service.tunnel.returncode is None:
             self.service.tunnel.terminate()
         self.status.set('Остановлено')
+        for key in self.service_states:
+            self.service_states[key].set('Остановлен')
         self.start.configure(state='normal')
         self.stop.configure(state='disabled')
 
