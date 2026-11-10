@@ -254,6 +254,7 @@ class App:
     def start_service(self):
         # WinRAR's Open action may run an onedir build from a temporary folder,
         # where only part of _internal is extracted.
+        # The literal path marker "rar$" identifies WinRAR temporary extraction folders.
         rarMarker = 'rar' + '$'
         if getattr(sys, 'frozen', False) and rarMarker in str(Path(sys.executable).resolve()).casefold():
             messagebox.showerror(
