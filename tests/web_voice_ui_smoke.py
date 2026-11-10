@@ -39,13 +39,15 @@ def main() -> None:
         "--page: #f5f5f7",
         "pendingRequests",
         "Отправить",
+        "let selectedVoice = '__DEFAULT_VOICE__';",
+        "card.dataset.voice === selectedVoice",
     ]
     for fragment in required:
         if fragment not in page:
             raise AssertionError(f"Web UI is missing required fragment: {fragment}")
 
     app = (ROOT / "voice_reader" / "app.py").read_text(encoding="utf-8")
-    for fragment in ["#090d18", "Primary.TButton", "Журнал работы", "Voice Reader Pro"]:
+    for fragment in ["#090d18", "Primary.TButton", "Журнал работы", "Voice Reader Pro", "rar$"]:
         if fragment not in app:
             raise AssertionError(f"Desktop dark theme is missing: {fragment}")
 
