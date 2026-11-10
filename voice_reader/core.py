@@ -12,13 +12,14 @@ import aiohttp
 from aiohttp import web
 import discord
 from voice_reader.voice_profiles import (VOICE_PRESETS, LEGACY_VOICE_IDS, resolve_voice_profile)
+from voice_reader.local_tts import LocalSileroTTS
 from voice_reader.additional_tts import ArmenianAccentTTS, TeraPopTTS
 from voice_reader.number_normalizer import normalize_numbers_for_speech
 
 MAX_TEXT = 350
 
 
-def normalize_voice_key(value, default="armenian"):
+def normalize_voice_key(value, default="normal"):
     raw_key = str(value if value is not None else default).strip()
     key = LEGACY_VOICE_IDS.get(raw_key, raw_key)
     if key not in VOICE_PRESETS:
@@ -73,18 +74,21 @@ class DiagnosticFFmpegPCMAudio(discord.FFmpegPCMAudio):
         return data
 
 class VoiceService:
-    def __init__(self, token, guild_id, channel_id, voice, ffmpeg, logger, voice_assets_dir):
+    def __init__(self, token, guild_id, channel_id, voice, ffmpeg, logger, tts_model_path):
         self.token = token
         self.guild_id, self.channel_id = int(guild_id), int(channel_id)
         self.voice, self.ffmpeg, self.log = voice, str(ffmpeg), logger
-        voice_assets = Path(voice_assets_dir)
+        self.local_tts = LocalSileroTTS(tts_model_path, logger)
+        voice_assets = Path(tts_model_path).parent
         self.armenian_tts = ArmenianAccentTTS(voice_assets / "armenian", logger)
         self.pop_tts = TeraPopTTS(voice_assets / "teratts", logger)
+        self.tts_ready = asyncio.Event()
+        self.tts_error = None
         # Unbounded FIFO: users can submit repeatedly without per-minute throttling.
         self.queue = asyncio.Queue()
         self.client = discord.Client(intents=discord.Intents(guilds=True, voice_states=True))
         self.runner = self.site = self.tunnel = self.worker = self.discord_task = self.start_watchdog = None
-        self.loop_watchdog_task = None
+        self.tts_load_task = self.loop_watchdog_task = None
         self.voice_client = None
         self.ready = asyncio.Event()
 
@@ -189,11 +193,25 @@ class VoiceService:
         self.site = web.TCPSite(self.runner, '127.0.0.1', 8765)
         await self.site.start()
         self.worker = asyncio.create_task(self.play_worker())
+        self.tts_load_task = asyncio.create_task(self._load_local_tts())
         self.loop_watchdog_task = asyncio.create_task(self._watch_event_loop())
         self.discord_task = asyncio.create_task(self._start_discord())
         self.discord_task.add_done_callback(self._discord_finished)
         self.start_watchdog = asyncio.create_task(self._check_discord_startup())
-        self.log('Веб-сервер запущен. Два офлайн-голоса загрузятся при первом использовании; подключаем бота к Discord…')
+        self.log('Веб-сервер запущен. Загружается обычный мужской и женский голос; подключаем бота к Discord…')
+
+    async def _load_local_tts(self):
+        started = time.perf_counter()
+        try:
+            # CPU-heavy model loading and warm-up must not block Discord heartbeats.
+            await asyncio.to_thread(self.local_tts.load)
+            elapsed = (time.perf_counter() - started) * 1000
+            self.log(f'Локальная модель Silero готова за {elapsed:.0f} мс. Обычный и женский голоса доступны.')
+        except Exception as exc:
+            self.tts_error = f'{type(exc).__name__}: {exc}'
+            self.log(f'Не удалось загрузить локальную модель голоса: {self.tts_error}')
+        finally:
+            self.tts_ready.set()
 
     async def _watch_event_loop(self):
         # Discord heartbeat warnings mean the asyncio loop was not scheduled.
@@ -252,7 +270,7 @@ class VoiceService:
     async def index(self, request):
         page_path = Path(__file__).parent / 'static' / 'index.html'
         page = page_path.read_text(encoding='utf-8')
-        default_voice = self.voice if self.voice in VOICE_PRESETS else 'armenian'
+        default_voice = self.voice if self.voice in VOICE_PRESETS else 'normal'
         page = page.replace('__DEFAULT_VOICE__', default_voice)
         return web.Response(
             text=page,
@@ -315,6 +333,11 @@ class VoiceService:
                     self.log('Голосовое соединение потеряно. Новые сообщения временно не принимаются.')
                     continue
 
+                await self.tts_ready.wait()
+                if self.tts_error:
+                    self.log(f'Озвучивание недоступно: {self.tts_error}')
+                    continue
+
                 profile = resolve_voice_profile(selected_voice)
                 speech_text = normalize_numbers_for_speech(text)
                 engine = profile.get("engine", "armenian")
@@ -331,7 +354,14 @@ class VoiceService:
 
                 # All neural inference runs outside the asyncio loop so Discord
                 # gateway and voice heartbeats remain responsive.
-                if engine == "armenian":
+                if engine == "silero":
+                    audio_bytes, audio_duration = await asyncio.to_thread(
+                        self.local_tts.synthesize_to_wav,
+                        speech_text,
+                        profile["speaker"],
+                        file_name,
+                    )
+                elif engine == "armenian":
                     audio_bytes, audio_duration = await asyncio.to_thread(
                         self.armenian_tts.synthesize_to_wav,
                         speech_text,
@@ -439,6 +469,7 @@ class VoiceService:
             self.worker,
             self.discord_task,
             self.start_watchdog,
+            self.tts_load_task,
             self.loop_watchdog_task,
         ):
             if task and not task.done():
