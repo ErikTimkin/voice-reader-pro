@@ -271,6 +271,7 @@ class VoiceService:
         await self.site.start()
         self.worker = asyncio.create_task(self.play_worker())
         self.tts_load_task = asyncio.create_task(self._load_local_tts())
+        self.armenian_load_task = asyncio.create_task(self._preload_armenian_tts())
         self.loop_watchdog_task = asyncio.create_task(self._watch_event_loop())
         self.voice_watchdog_task = asyncio.create_task(self._watch_voice_connection())
         self.discord_task = asyncio.create_task(self._start_discord())
@@ -290,6 +291,27 @@ class VoiceService:
             self.log(f'Не удалось загрузить локальную модель голоса: {self.tts_error}')
         finally:
             self.tts_ready.set()
+
+    async def _preload_armenian_tts(self):
+        """Load the Armenian-accent model before its first request, off the Discord loop."""
+        try:
+            await self.tts_ready.wait()
+            if self.tts_error:
+                return
+            # Let Discord finish connecting and avoid competing with the initial Silero warm-up.
+            await asyncio.sleep(2)
+            started = time.perf_counter()
+            await asyncio.to_thread(self.armenian_tts.load)
+            elapsed = (time.perf_counter() - started) * 1000
+            self.log(
+                f"Армянская модель заранее загружена за {elapsed:.0f} мс. "
+                "Первое сообщение не будет ждать загрузку весов и подготовку тембра."
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Keep the other voices available if this optional model fails to load.
+            self.log(f"Не удалось заранее загрузить армянский голос: {type(exc).__name__}: {exc}")
 
     async def _watch_event_loop(self):
         # Discord heartbeat warnings mean the asyncio loop was not scheduled.
@@ -645,6 +667,7 @@ class VoiceService:
             self.discord_task,
             self.start_watchdog,
             self.tts_load_task,
+            self.armenian_load_task,
             self.loop_watchdog_task,
             self.voice_watchdog_task,
         ):
