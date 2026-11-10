@@ -27,6 +27,8 @@ def _write_audio_wav(audio, sample_rate: int, target_path: str | Path) -> tuple[
     if peak < 1e-5:
         raise RuntimeError("Дополнительная модель вернула тишину.")
 
+    # Normalize model output before FFmpeg/Discord; raw TTS can be valid but quiet.
+    samples = samples * (0.85 / peak)
     pcm = (np.clip(samples, -1.0, 1.0) * 32767.0).astype(np.int16)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     with wave.open(str(target_path), "wb") as output:
@@ -84,7 +86,8 @@ class TeraPopTTS:
             importlib.invalidate_caches()
             self.log("Загружаю локальную модель TeraTTSv2 (мужской голос ru_m5)…")
             module = importlib.import_module("teratts")
-            threads = max(1, min(6, (os.cpu_count() or 2) // 2))
+            # Keep CPU headroom for Discord gateway and voice heartbeats.
+            threads = max(1, min(2, (os.cpu_count() or 2) // 4))
             loaded = module.load_model(
                 self.model_dir,
                 provider="CPUExecutionProvider",
@@ -188,7 +191,8 @@ class ArmenianAccentTTS:
                     )
                     runtime_config_path = Path(runtime_config.name)
 
-                torch.set_num_threads(max(1, min(4, os.cpu_count() or 2)))
+                # Avoid starving Discord's event loop on mid-range CPUs.
+                torch.set_num_threads(max(1, min(2, (os.cpu_count() or 2) // 4)))
                 self.log("Загружаю многоязычную модель Pocket TTS (армянский + русский)…")
                 model = TTSModel.load_model(config=str(runtime_config_path))
             finally:
