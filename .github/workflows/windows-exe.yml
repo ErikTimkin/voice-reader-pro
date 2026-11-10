@@ -117,6 +117,9 @@ jobs:
         shell: pwsh
         run: |
           if (!(Test-Path dist/VoiceReaderPro/VoiceReaderPro.exe)) { throw 'EXE was not generated in the app folder' }
+          if (!(Test-Path 'dist/VoiceReaderPro/_internal/transformers/models/__init__.pyc')) {
+            throw 'transformers.models __init__.pyc must be available on disk for TeraTTS dynamic imports'
+          }
           if ((Get-Item dist/VoiceReaderPro/VoiceReaderPro.exe).Length -lt 1MB) { throw 'EXE launcher is unexpectedly small' }
           if (!(Test-Path dist/VoiceReaderPro/voices/v5_6_ru.pt)) { throw 'Default/female Silero model is missing' }
           if ((Get-Item dist/VoiceReaderPro/voices/v5_6_ru.pt).Length -lt 50000000) { throw 'Silero model is incomplete' }
