@@ -9,12 +9,15 @@ from voice_reader.voice_profiles import VOICE_PRESETS
 
 
 def main() -> None:
-    if set(VOICE_PRESETS) != {"normal", "female", "cute_girl", "armenian"}:
+    if set(VOICE_PRESETS) != {"normal", "female", "cute_girl", "armenian", "jelly_bear"}:
         raise AssertionError(f"Expected male, female, cute and Armenian voices: {list(VOICE_PRESETS)}")
     assert normalize_voice_key("normal") == "normal"
     assert normalize_voice_key("female") == "female"
     assert normalize_voice_key("cute_girl") == "cute_girl"
     assert normalize_voice_key("armenian") == "armenian"
+    assert normalize_voice_key("jelly_bear") == "jelly_bear"
+    assert VOICE_PRESETS["jelly_bear"]["speaker"] == "xenia"
+    assert "asetrate=57120" in VOICE_PRESETS["jelly_bear"]["ffmpeg_options"]
     assert normalize_voice_key("pop") == "cute_girl"
     # Old Pudge configs fall back to the regular male voice.
     assert normalize_voice_key("pudge") == "normal"
@@ -28,6 +31,8 @@ def main() -> None:
         'data-voice="female"',
         'data-voice="cute_girl"',
         'data-voice="armenian"',
+        'data-voice="jelly_bear"',
+        "Желейный медведь",
         'Обычный мужской',
         'Обычный женский',
         'Армянский акцент',
