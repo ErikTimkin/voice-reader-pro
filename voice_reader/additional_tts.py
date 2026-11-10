@@ -27,6 +27,10 @@ def _write_audio_wav(audio, sample_rate: int, target_path: str | Path) -> tuple[
     if peak < 1e-5:
         raise RuntimeError("Дополнительная модель вернула тишину.")
 
+    # TTS checkpoints can return valid but extremely quiet waveforms. Normalize
+    # peak level before converting to int16 so the Armenian and pop voices are
+    # audible through Discord's Opus pipeline. Keep headroom to avoid clipping.
+    samples = samples * (0.85 / peak)
     pcm = (np.clip(samples, -1.0, 1.0) * 32767.0).astype(np.int16)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     with wave.open(str(target_path), "wb") as output:
