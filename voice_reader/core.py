@@ -119,6 +119,13 @@ class StreamingPCMSource(discord.AudioSource):
             return
         self._finished = True
         self._error = error
+        if self.stop_event.is_set():
+            # A stopped Discord player no longer drains the queue.
+            while True:
+                try:
+                    self._frames.get_nowait()
+                except queue.Empty:
+                    break
         self._frames.put(None)
 
     def read(self):
