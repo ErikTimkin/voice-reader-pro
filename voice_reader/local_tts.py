@@ -32,9 +32,10 @@ VOICE_PRESETS = {
         "speaker": "xenia",
         "ffmpeg_options": "-af volume=1.15",
     },
-    "armenian": {
-        "label": "Армянский акцент",
-        "engine": "armenian",
+    "accent": {
+        "label": "Иностранный мужской акцент",
+        "engine": "teratts",
+        "speaker": "eng_m4",
         "ffmpeg_options": "-af volume=1.1",
     },
     "pop": {
