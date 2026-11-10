@@ -3,7 +3,9 @@ from __future__ import annotations
 import gc
 import importlib
 import os
+import re
 import sys
+import unicodedata
 import tempfile
 import wave
 from pathlib import Path
@@ -125,6 +127,28 @@ class TeraPopTTS:
         gc.collect()
 
 
+def normalize_russian_for_pocket_tts(text: str) -> str:
+    """Prepare Russian text for the tri_v1 Pocket TTS checkpoint.
+
+    The checkpoint's training notes require language-specific text
+    normalization. Numbers are expanded by Voice Reader's shared normalizer
+    before this function; here we canonicalize Unicode, punctuation and
+    whitespace so the SentencePiece tokenizer sees the expected Russian text.
+    """
+    value = unicodedata.normalize("NFC", str(text or ""))
+    value = value.replace("ё", "ё").replace("Ё", "Ё")
+    value = value.translate(str.maketrans({
+        "—": "-", "–": "-", "−": "-",
+        "“": '"', "”": '"', "„": '"',
+        "’": "'", "‘": "'", "…": "...",
+        "\u00a0": " ", "\u2009": " ", "\u202f": " ",
+    }))
+    value = re.sub(r"[\\t\\r\\f\\v ]+", " ", value)
+    value = re.sub(r" *([,.;:!?]) *", r"\\1 ", value)
+    value = re.sub(r"\\s+", " ", value).strip()
+    return value
+
+
 class ArmenianAccentTTS:
     """Russian speech conditioned on an anonymized Eastern Armenian speaker sample."""
 
@@ -211,7 +235,7 @@ class ArmenianAccentTTS:
 
     def synthesize_to_wav(self, text: str, target_path: str | Path) -> tuple[int, float]:
         self.load()
-        prepared_text = str(text).strip()
+        prepared_text = normalize_russian_for_pocket_tts(text)
         if not prepared_text:
             raise RuntimeError("Для армянского голоса передан пустой текст.")
 
