@@ -24,7 +24,18 @@ def main() -> None:
         raise AssertionError(f"Expected four 20 ms frames from an 80 ms chunk, got {len(frames)}")
     if not any(any(frame) for frame in frames):
         raise AssertionError("Stream conversion produced silence")
-    print("PASS: Armenian 24 kHz chunks convert to Discord 48 kHz stereo PCM frames")
+    failed_source = StreamingPCMSource(lambda _message: None)
+    expected_error = RuntimeError("simulated Pocket TTS failure")
+    failed_source.finish(expected_error)
+    try:
+        failed_source.read()
+    except RuntimeError as exc:
+        if expected_error.__str__() not in str(exc):
+            raise AssertionError(f"Stream error detail was lost: {exc}") from exc
+    else:
+        raise AssertionError("Armenian stream source swallowed its synthesis error")
+
+    print("PASS: Armenian PCM framing and stream-error propagation")
 
 
 if __name__ == "__main__":
