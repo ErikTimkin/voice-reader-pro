@@ -251,6 +251,29 @@ class ArmenianAccentTTS:
             # text and is not part of the Russian cross-lingual inference path.
             self.model = model
             self.voice_state = voice_state
+
+            # Loading weights and the speaker prompt does not initialize every
+            # inference/decoder path. Run a tiny throwaway stream now, while the
+            # app is starting, so the first real Discord request does not pay
+            # the one-time CPU/kernel/cache setup cost.
+            warmup_started = __import__("time").perf_counter()
+            warmup_samples = 0
+            for warmup_chunk in self.model.generate_audio_stream(
+                self.voice_state,
+                "Привет.",
+                copy_state=True,
+            ):
+                if hasattr(warmup_chunk, "numel"):
+                    warmup_samples += int(warmup_chunk.numel())
+                else:
+                    warmup_samples += int(np.asarray(warmup_chunk).size)
+            if warmup_samples <= 0:
+                raise RuntimeError("Pocket TTS не выдал звук во время прогрева армянской модели.")
+            warmup_ms = (__import__("time").perf_counter() - warmup_started) * 1000
+            self.log(
+                f"Армянская модель прогрета: тестовый звук={warmup_samples / model.sample_rate:.2f} сек, "
+                f"время прогрева={warmup_ms:.0f} мс."
+            )
             self.log("Армянский акцент готов: русский текст, восточноармянский референс.")
 
     def synthesize_to_wav(self, text: str, target_path: str | Path) -> tuple[int, float]:
@@ -273,6 +296,12 @@ class ArmenianAccentTTS:
         prepared_text = normalize_russian_for_pocket_tts(text)
         if not prepared_text:
             raise RuntimeError("Для армянского голоса передан пустой текст.")
+        import time
+        started = time.perf_counter()
+        first_chunk_ms = None
+        chunks = 0
+        sample_count = 0
+        peak = 0.0
         with self._synthesis_lock:
             for chunk in self.model.generate_audio_stream(
                 self.voice_state,
@@ -289,9 +318,27 @@ class ArmenianAccentTTS:
                 samples = np.asarray(samples, dtype=np.float32).reshape(-1)
                 if samples.size == 0:
                     continue
+                if first_chunk_ms is None:
+                    first_chunk_ms = (time.perf_counter() - started) * 1000
+                chunks += 1
+                sample_count += int(samples.size)
+                peak = max(peak, float(np.max(np.abs(samples))))
                 # Pocket TTS emits 24 kHz mono. Discord PCM expects 48 kHz,
                 # 16-bit stereo, in exact 20 ms frames (3,840 bytes).
                 source.push_mono_24k(samples)
+        elapsed = time.perf_counter() - started
+        audio_seconds = sample_count / float(self.model.sample_rate)
+        rtf = (elapsed / audio_seconds) if audio_seconds > 0 else float("inf")
+        self.log(
+            f"Армянский синтез: первый чанк={first_chunk_ms:.0f} мс; "
+            f"чанков={chunks}; длительность={audio_seconds:.2f} сек; "
+            f"генерация={elapsed:.2f} сек; RTF={rtf:.2f}; peak={peak:.4f}."
+            if first_chunk_ms is not None else
+            f"Армянский синтез: модель не выдала чанков; время={elapsed:.2f} сек."
+        )
+        if sample_count and peak < 1e-5:
+            source.finish(RuntimeError("Pocket TTS вернул цифровую тишину."))
+            return
         source.finish()
 
     def unload(self) -> None:
