@@ -4,11 +4,13 @@ import gc
 import importlib
 import os
 import sys
+import tempfile
 import wave
 from pathlib import Path
 from threading import Lock
 
 import numpy as np
+import yaml
 
 
 def _write_audio_wav(audio, sample_rate: int, target_path: str | Path) -> tuple[int, float]:
@@ -54,13 +56,29 @@ class TeraPopTTS:
         with self._load_lock:
             if self.model is not None:
                 return
-            script = self.model_dir / "teratts.py"
-            if not script.is_file():
+            release = self.model_dir.resolve()
+            required = (
+                release / "teratts.py",
+                release / "unicode_indexer.json",
+                release / "models" / "text_encoder.onnx",
+                release / "models" / "duration_predictor.onnx",
+                release / "models" / "sampler_distilled_cfg3_8step.onnx",
+                release / "models" / "vocoder.onnx",
+                release / "styles" / "ru_m5" / "style_ttl.npy",
+                release / "styles" / "ru_m5" / "style_dp.npy",
+            )
+            missing = [path for path in required if not path.is_file()]
+            if missing:
                 raise FileNotFoundError(
-                    f"Не найдена локальная модель молодого мужского голоса: {script}"
+                    "Неполный пакет молодого поп-голоса; отсутствуют файлы: "
+                    + ", ".join(str(path) for path in missing)
+                )
+            if not (release / "ruaccent").is_dir():
+                raise FileNotFoundError(
+                    f"Не найдена папка RUAccent молодого поп-голоса: {release / 'ruaccent'}"
                 )
 
-            model_path = str(self.model_dir.resolve())
+            model_path = str(release)
             if model_path not in sys.path:
                 sys.path.insert(0, model_path)
             importlib.invalidate_caches()
@@ -123,9 +141,15 @@ class ArmenianAccentTTS:
 
             config_path = self.model_dir / "armenian_tri.yaml"
             reference_path = self.model_dir / "armenian_reference.wav"
-            for path in (config_path, reference_path):
-                if not path.is_file():
-                    raise FileNotFoundError(f"Не найден ресурс армянского голоса: {path}")
+            weights_path = self.model_dir / "tri_v1" / "model.safetensors"
+            tokenizer_path = self.model_dir / "tri_v1" / "tokenizer_tri.model"
+            required = (config_path, reference_path, weights_path, tokenizer_path)
+            missing = [path for path in required if not path.is_file()]
+            if missing:
+                raise FileNotFoundError(
+                    "Неполный пакет армянского голоса; отсутствуют файлы: "
+                    + ", ".join(str(path) for path in missing)
+                )
 
             try:
                 import torch
@@ -135,9 +159,42 @@ class ArmenianAccentTTS:
                     "Для армянского голоса не установлены компоненты Pocket TTS."
                 ) from exc
 
-            torch.set_num_threads(max(1, min(4, os.cpu_count() or 2)))
-            self.log("Загружаю многоязычную модель Pocket TTS (армянский + русский)…")
-            model = TTSModel.load_model(config=str(config_path))
+            # The build-time YAML must never dictate paths on the user's PC.
+            # CI used to write absolute D:\\a\\... paths into this file. Those
+            # paths exist on the GitHub runner, not on another Windows machine.
+            # Resolve the two model assets from this installation's voices folder
+            # and pass Pocket TTS a temporary portable config.
+            config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+            config["weights_path"] = str(weights_path.resolve())
+            config.pop("weights_path_without_voice_cloning", None)
+            config["flow_lm"]["lookup_table"]["tokenizer_path"] = str(
+                tokenizer_path.resolve()
+            )
+
+            runtime_config_path = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    mode="w",
+                    encoding="utf-8",
+                    suffix=".yaml",
+                    prefix="voice-reader-armenian-",
+                    delete=False,
+                ) as runtime_config:
+                    yaml.safe_dump(
+                        config,
+                        runtime_config,
+                        allow_unicode=True,
+                        sort_keys=False,
+                    )
+                    runtime_config_path = Path(runtime_config.name)
+
+                torch.set_num_threads(max(1, min(4, os.cpu_count() or 2)))
+                self.log("Загружаю многоязычную модель Pocket TTS (армянский + русский)…")
+                model = TTSModel.load_model(config=str(runtime_config_path))
+            finally:
+                if runtime_config_path is not None:
+                    runtime_config_path.unlink(missing_ok=True)
+
             self.log("Подготавливаю тембр анонимизированного восточноармянского диктора…")
             voice_state = model.get_state_for_audio_prompt(str(reference_path))
 
