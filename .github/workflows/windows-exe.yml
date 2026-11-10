@@ -111,7 +111,6 @@ jobs:
             'voices/armenian/armenian_reference.wav',
             'voices/armenian/tri_v1/model.safetensors',
             'voices/armenian/tri_v1/tokenizer_tri.model',
-            'voices/armenian/configs/hy_text.py',
             'samples/young-pop-ru.wav',
             'samples/armenian-accent-ru.wav'
           )
