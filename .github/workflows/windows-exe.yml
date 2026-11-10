@@ -91,7 +91,6 @@ jobs:
             'voices/armenian/armenian_tri.yaml',
             'voices/armenian/armenian_reference.wav',
             'voices/armenian/tri_v1/model.safetensors',
-            'voices/armenian/tri_v1/tokenizer_tri.model',
             'voices/armenian/tri_v1/tokenizer_tri.model'
           )
           foreach ($relative in $extraFiles) {
