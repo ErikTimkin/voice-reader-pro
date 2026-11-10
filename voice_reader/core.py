@@ -111,8 +111,13 @@ class StreamingPCMSource(discord.AudioSource):
             frame = payload[offset:offset + self.FRAME_BYTES]
             if len(frame) < self.FRAME_BYTES:
                 frame += b"\\x00" * (self.FRAME_BYTES - len(frame))
-            self._frames.put(frame)
-            self._bytes += len(frame)
+            while not self.stop_event.is_set():
+                try:
+                    self._frames.put(frame, timeout=0.1)
+                    self._bytes += len(frame)
+                    break
+                except queue.Full:
+                    continue
 
     def finish(self, error=None):
         if self._finished:
@@ -530,6 +535,8 @@ class VoiceService:
                 except Exception:
                     voice_client.send_audio_packet = original_send_audio_packet
                     original_send_audio_packet = None
+                    if engine == "armenian":
+                        source.cleanup()
                     raise
 
                 playback_error = await done
