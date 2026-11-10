@@ -16,7 +16,7 @@ async def main_async() -> None:
 
     tts = LocalSileroTTS(model_path, lambda _message: None)
     await asyncio.to_thread(tts.load)
-    for preset, expected_speaker in (("normal", "aidar"), ("cute_girl", "xenia")):
+    for preset, expected_speaker in (("normal", "aidar"), ("female", "baya"), ("cute_girl", "xenia")):
         profile = resolve_voice_profile(preset)
         if profile["speaker"] != expected_speaker:
             raise AssertionError(f"{preset}: expected speaker {expected_speaker}, got {profile}")
@@ -32,7 +32,7 @@ async def main_async() -> None:
         target.unlink(missing_ok=True)
         print(f"{preset}: {expected_speaker}, {duration:.2f}s, {size} bytes")
 
-    print("Default male and female Silero voices synthesized successfully.")
+    print("Male, female and cute Silero voices synthesized successfully.")
 
 
 if __name__ == "__main__":
