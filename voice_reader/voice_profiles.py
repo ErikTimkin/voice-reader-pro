@@ -20,6 +20,13 @@ VOICE_PRESETS = {
         "speaker": "xenia",
         "ffmpeg_options": "-af volume=1.15",
     },
+    "jelly_bear": {
+        "label": "Желейный медведь",
+        "engine": "silero",
+        "speaker": "xenia",
+        # Bright, high-pitched cartoon tone without cloning a real performer.
+        "ffmpeg_options": "-af asetrate=57120,aresample=48000,atempo=0.84,volume=1.15",
+    },
     "armenian": {
         "label": "Армянский акцент",
         "engine": "armenian",
