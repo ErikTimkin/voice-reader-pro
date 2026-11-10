@@ -519,14 +519,22 @@ def run_frozen_voice_smoke_test(preset: str) -> int:
         else:
             raise RuntimeError(f"Unsupported voice engine in frozen test: {engine}")
 
+        import numpy as np
         with wave.open(str(output_path), "rb") as audio:
+            raw_samples = audio.readframes(audio.getnframes())
+            samples = np.frombuffer(raw_samples, dtype=np.int16).astype(np.float64)
             actual_duration = audio.getnframes() / float(audio.getframerate())
-        if size < 2048 or duration < 0.25 or actual_duration < 0.25:
+        peak = float(np.max(np.abs(samples))) if samples.size else 0.0
+        rms = float(np.sqrt(np.mean(samples * samples))) if samples.size else 0.0
+        if size < 2048 or duration < 0.25 or actual_duration < 0.25 or peak < 5000 or rms < 250:
             raise RuntimeError(
-                f"Invalid generated audio: bytes={size}, duration={duration:.2f}s, "
-                f"wav_duration={actual_duration:.2f}s"
+                f"Invalid/quiet generated audio: bytes={size}, duration={duration:.2f}s, "
+                f"wav_duration={actual_duration:.2f}s, peak={peak:.0f}, RMS={rms:.1f}"
             )
-        log(f"PASS: {preset}; engine={engine}; {duration:.2f}s; {size} bytes.")
+        log(
+            f"PASS: {preset}; engine={engine}; {duration:.2f}s; {size} bytes; "
+            f"peak={peak:.0f}; RMS={rms:.1f}."
+        )
         return 0
     except Exception:
         log("FAIL: " + traceback.format_exc())
