@@ -143,10 +143,10 @@ def normalize_russian_for_pocket_tts(text: str) -> str:
         "’": "'", "‘": "'", "…": "...",
         "\u00a0": " ", "\u2009": " ", "\u202f": " ",
     }))
-    value = re.sub(r"[\\t\\r\\f\\v ]+", " ", value)
-    value = re.sub(r" *([,;:!?]) *", r"\\1 ", value)
-    value = re.sub(r"\\.\\s*\\.\\s*\\.", "...", value)
-    value = re.sub(r"\\s+", " ", value).strip()
+    value = re.sub(r"[\t\r\f\v ]+", " ", value)
+    value = re.sub(r" *([,;:!?]) *", r"\1 ", value)
+    value = re.sub(r"\.\s*\.\s*\.", "...", value)
+    value = re.sub(r"\s+", " ", value).strip()
     return value
 
 
