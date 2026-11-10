@@ -160,6 +160,8 @@ class VoiceService:
         self.pop_tts = TeraPopTTS(voice_assets / "teratts", logger)
         self.tts_ready = asyncio.Event()
         self.tts_error = None
+        self.armenian_ready = asyncio.Event()
+        self.armenian_error = None
         # Unbounded FIFO: users can submit repeatedly without per-minute throttling.
         self.queue = asyncio.Queue()
         self.client = discord.Client(intents=discord.Intents(guilds=True, voice_states=True))
@@ -311,7 +313,10 @@ class VoiceService:
             raise
         except Exception as exc:
             # Keep the other voices available if this optional model fails to load.
-            self.log(f"Не удалось заранее загрузить армянский голос: {type(exc).__name__}: {exc}")
+            self.armenian_error = f"{type(exc).__name__}: {exc}"
+            self.log(f"Не удалось заранее загрузить армянский голос: {self.armenian_error}")
+        finally:
+            self.armenian_ready.set()
 
     async def _watch_event_loop(self):
         # Discord heartbeat warnings mean the asyncio loop was not scheduled.
@@ -464,14 +469,28 @@ class VoiceService:
                     self.log('Голосовое соединение потеряно. Новые сообщения временно не принимаются.')
                     continue
 
-                await self.tts_ready.wait()
-                if self.tts_error:
-                    self.log(f'Озвучивание недоступно: {self.tts_error}')
-                    continue
-
                 profile = resolve_voice_profile(selected_voice)
                 speech_text = normalize_numbers_for_speech(text)
                 engine = profile.get("engine", "armenian")
+
+                # Each engine has its own readiness and error state. A failed
+                # Silero load must not disable the independent Armenian model.
+                if engine == "silero":
+                    await self.tts_ready.wait()
+                    if self.tts_error:
+                        self.log(
+                            f'Голос «{profile["label"]}» недоступен: '
+                            f'ошибка загрузки Silero: {self.tts_error}'
+                        )
+                        continue
+                elif engine == "armenian":
+                    await self.armenian_ready.wait()
+                    if self.armenian_error:
+                        self.log(
+                            f'Голос «{profile["label"]}» недоступен: '
+                            f'ошибка загрузки Pocket TTS: {self.armenian_error}'
+                        )
+                        continue
                 self.log(
                     f'Локальная озвучка: {profile["label"]}; '
                     f'движок={engine}; диктор={profile.get("speaker", selected_voice)}.'
