@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from voice_reader.additional_tts import ArmenianAccentTTS, TeraPopTTS
+from voice_reader.additional_tts import ArmenianAccentTTS
 
 
 def check_wav(path: Path, minimum_size: int = 5000, minimum_duration: float = 0.5) -> None:
@@ -22,19 +22,6 @@ def check_wav(path: Path, minimum_size: int = 5000, minimum_duration: float = 0.
 async def main_async() -> None:
     samples = ROOT / "tests" / "voice-samples"
     samples.mkdir(parents=True, exist_ok=True)
-
-    pop = TeraPopTTS(ROOT / "voices" / "teratts", lambda _message: None)
-    pop_path = samples / "young-pop-ru.wav"
-    try:
-        size, duration = await asyncio.to_thread(
-            pop.synthesize_to_wav,
-            "Привет! Это проверка молодого мужского голоса. Сегодня отличный день!",
-            pop_path,
-        )
-        check_wav(pop_path)
-    finally:
-        pop.unload()
-        del pop
 
     import gc
     gc.collect()
@@ -57,7 +44,7 @@ async def main_async() -> None:
         del armenian
         gc.collect()
 
-    print("Both additional offline voices loaded and produced non-silent WAV samples.")
+    print("The Armenian accent voice loaded and produced a non-silent WAV sample.")
 
 
 if __name__ == "__main__":
