@@ -164,7 +164,7 @@ class VoiceService:
         self.queue = asyncio.Queue()
         self.client = discord.Client(intents=discord.Intents(guilds=True, voice_states=True))
         self.runner = self.site = self.tunnel = self.worker = self.discord_task = self.start_watchdog = None
-        self.tts_load_task = self.loop_watchdog_task = None
+        self.tts_load_task = self.loop_watchdog_task = self.voice_watchdog_task = None
         self.voice_client = None
         self.ready = asyncio.Event()
 
@@ -272,6 +272,7 @@ class VoiceService:
         self.worker = asyncio.create_task(self.play_worker())
         self.tts_load_task = asyncio.create_task(self._load_local_tts())
         self.loop_watchdog_task = asyncio.create_task(self._watch_event_loop())
+        self.voice_watchdog_task = asyncio.create_task(self._watch_voice_connection())
         self.discord_task = asyncio.create_task(self._start_discord())
         self.discord_task.add_done_callback(self._discord_finished)
         self.start_watchdog = asyncio.create_task(self._check_discord_startup())
@@ -301,6 +302,22 @@ class VoiceService:
             if lag > 0.75:
                 self.log(f'Задержка event loop: {lag:.2f} сек. Синтез голоса выполняется в отдельном потоке.')
             expected = now + 1.0
+
+    async def _watch_voice_connection(self):
+        """Recover the configured voice connection after transient Discord drops."""
+        while True:
+            await asyncio.sleep(15)
+            if not self.client.is_ready():
+                continue
+            current = self.voice_client
+            if current and current.is_connected():
+                continue
+            self.ready.clear()
+            self.log('Проверка соединения: бот не в голосовом канале. Пробую восстановить подключение…')
+            try:
+                await self.on_ready()
+            except Exception as exc:
+                self.log(f'Не удалось автоматически восстановить голосовое соединение: {type(exc).__name__}: {exc}')
 
     async def _start_discord(self):
         try:
@@ -629,6 +646,7 @@ class VoiceService:
             self.start_watchdog,
             self.tts_load_task,
             self.loop_watchdog_task,
+            self.voice_watchdog_task,
         ):
             if task and not task.done():
                 task.cancel()
