@@ -5,6 +5,9 @@ on:
     branches: [main, fix/armenian-pop-runtime]
 permissions:
   contents: read
+concurrency:
+  group: voice-reader-pro-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: windows-latest
