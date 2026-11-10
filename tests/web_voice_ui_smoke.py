@@ -9,21 +9,25 @@ from voice_reader.voice_profiles import VOICE_PRESETS
 
 
 def main() -> None:
-    if set(VOICE_PRESETS) != {"armenian", "pop"}:
-        raise AssertionError(f"Only Armenian and pop voices should remain: {list(VOICE_PRESETS)}")
+    if set(VOICE_PRESETS) != {"normal", "cute_girl", "armenian", "pop"}:
+        raise AssertionError(f"Expected default, female, Armenian and pop voices: {list(VOICE_PRESETS)}")
+    assert normalize_voice_key("normal") == "normal"
+    assert normalize_voice_key("cute_girl") == "cute_girl"
     assert normalize_voice_key("armenian") == "armenian"
     assert normalize_voice_key("pop") == "pop"
-    # Existing installations with old saved settings keep working after upgrade.
-    assert normalize_voice_key("normal") == "armenian"
-    assert normalize_voice_key("cute_girl") == "armenian"
-    assert normalize_voice_key("pudge") == "armenian"
+    # Old Pudge configs fall back to the regular male voice.
+    assert normalize_voice_key("pudge") == "normal"
     assert VOICE_PRESETS["armenian"]["engine"] == "armenian"
     assert VOICE_PRESETS["pop"]["engine"] == "teratts"
 
     page = (ROOT / "voice_reader" / "static" / "index.html").read_text(encoding="utf-8")
     required = [
+        'data-voice="normal"',
+        'data-voice="cute_girl"',
         'data-voice="armenian"',
         'data-voice="pop"',
+        'Обычный мужской',
+        'Милая девушка',
         'Армянский акцент',
         'Молодой поп-голос',
         "event.key === 'Enter'",
@@ -39,7 +43,7 @@ def main() -> None:
     for fragment in required:
         if fragment not in page:
             raise AssertionError(f"Web UI is missing required fragment: {fragment}")
-    for retired in ('Пудж из Dota 2', 'Обычный мужской', 'Милая девушка', 'data-voice="normal"', 'data-voice="cute_girl"'):
+    for retired in ('Пудж из Dota 2', 'data-voice="pudge"'):
         if retired in page:
             raise AssertionError(f"Retired voice still appears in web UI: {retired}")
 
@@ -50,8 +54,8 @@ def main() -> None:
 
     core = (ROOT / "voice_reader" / "core.py").read_text(encoding="utf-8")
     app = (ROOT / "voice_reader" / "app.py").read_text(encoding="utf-8")
-    if "LocalSileroTTS" in core or "v5_6_ru.pt" in app:
-        raise AssertionError("The retired Silero voice pack must not be required")
+    if "LocalSileroTTS" not in core or "v5_6_ru.pt" not in app:
+        raise AssertionError("The default and female Silero voices must remain installed")
     if "RATE_WINDOW" in core or "RATE_COUNT" in core or "def allowed(" in core:
         raise AssertionError("Server-side per-minute request throttling is still enabled")
     if "self.queue = asyncio.Queue()" not in core:
