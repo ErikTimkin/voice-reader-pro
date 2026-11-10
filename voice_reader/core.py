@@ -419,38 +419,36 @@ class VoiceService:
                 if speech_text != text:
                     self.log(f'Числа преобразованы в слова перед озвучкой: {speech_text[:180]}')
 
-                fd, file_name = tempfile.mkstemp(suffix='.wav', prefix='voice-reader-')
-                os.close(fd)
-                synth_started = time.perf_counter()
-
-                # All neural inference runs outside the asyncio loop so Discord
-                # gateway and voice heartbeats remain responsive.
-                if engine == "silero":
-                    audio_bytes, audio_duration = await asyncio.to_thread(
-                        self.local_tts.synthesize_to_wav,
-                        speech_text,
-                        profile["speaker"],
-                        file_name,
-                    )
-                elif engine == "armenian":
-                    audio_bytes, audio_duration = await asyncio.to_thread(
-                        self.armenian_tts.synthesize_to_wav,
-                        speech_text,
-                        file_name,
-                    )
-                elif engine == "teratts":
-                    audio_bytes, audio_duration = await asyncio.to_thread(
-                        self.pop_tts.synthesize_to_wav,
-                        speech_text,
-                        file_name,
-                    )
+                if engine == "armenian":
+                    # Stream chunks directly to Discord; do not synthesize a
+                    # second full WAV before playback starts.
+                    self.log("Армянский голос: запускаю потоковую генерацию.")
                 else:
-                    raise RuntimeError(f"Неизвестный движок озвучивания: {engine}")
-                synth_ms = (time.perf_counter() - synth_started) * 1000
-                self.log(
-                    f'Локальная модель создала звук за {synth_ms:.0f} мс: '
-                    f'{audio_duration:.2f} сек, {audio_bytes} байт.'
-                )
+                    fd, file_name = tempfile.mkstemp(suffix='.wav', prefix='voice-reader-')
+                    os.close(fd)
+                    synth_started = time.perf_counter()
+
+                    # Neural inference stays off the asyncio loop.
+                    if engine == "silero":
+                        audio_bytes, audio_duration = await asyncio.to_thread(
+                            self.local_tts.synthesize_to_wav,
+                            speech_text,
+                            profile["speaker"],
+                            file_name,
+                        )
+                    elif engine == "teratts":
+                        audio_bytes, audio_duration = await asyncio.to_thread(
+                            self.pop_tts.synthesize_to_wav,
+                            speech_text,
+                            file_name,
+                        )
+                    else:
+                        raise RuntimeError(f"Неизвестный движок озвучивания: {engine}")
+                    synth_ms = (time.perf_counter() - synth_started) * 1000
+                    self.log(
+                        f'Локальная модель создала звук за {synth_ms:.0f} мс: '
+                        f'{audio_duration:.2f} сек, {audio_bytes} байт.'
+                    )
 
                 if not self.voice_client or not self.voice_client.is_connected():
                     self.ready.clear()
