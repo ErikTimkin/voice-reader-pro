@@ -69,7 +69,7 @@ class DiagnosticFFmpegPCMAudio(discord.FFmpegPCMAudio):
                 self._voice_log('ОШИБКА: FFmpeg не выдал ни одного PCM-кадра.')
             elif self._pcm_peak == 0:
                 self._voice_log('ОШИБКА: декодированное аудио полностью цифрово-бесшумное.')
-            elif rms < 80:
+            elif rms < 250:
                 self._voice_log('ПРЕДУПРЕЖДЕНИЕ: уровень PCM очень низкий; возможна почти полная тишина.')
         return data
 
