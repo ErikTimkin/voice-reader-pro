@@ -50,10 +50,14 @@
     .brand span span { color:#77777d;font-weight:500; }
     .status {
       display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border-radius:999px;
-      color:#287d4f;background:rgba(45,160,95,.08);border:1px solid rgba(45,160,95,.13);
+      color:#77777d;background:rgba(110,110,115,.07);border:1px solid rgba(29,29,31,.09);
       font-size:12px;font-weight:600;white-space:nowrap;
     }
-    .status-dot { width:7px;height:7px;border-radius:50%;background:#30a46c; }
+    .status-dot { width:7px;height:7px;border-radius:50%;background:#929298; }
+    .status.online { color:#287d4f;background:rgba(45,160,95,.08);border-color:rgba(45,160,95,.13); }
+    .status.online .status-dot { background:#30a46c; }
+    .status.offline { color:#b42318;background:rgba(220,50,50,.06);border-color:rgba(220,50,50,.13); }
+    .status.offline .status-dot { background:#d92d20; }
     .hero { text-align:center; margin:0 auto 34px; max-width:690px; }
     .eyebrow {
       margin-bottom:13px;color:#77777d;font-size:12px;font-weight:650;
@@ -165,7 +169,7 @@
         </div>
         <div>Voice Reader <span>Pro</span></div>
       </div>
-      <div class="status"><span class="status-dot"></span> Бот готов к озвучиванию</div>
+      <div class="status" id="botStatus" role="status" aria-live="polite"><span class="status-dot"></span><span id="botStatusText">Проверяю подключение…</span></div>
     </header>
 
     <section class="hero">
@@ -234,6 +238,8 @@
     const sendHint = document.querySelector('#sendHint');
     const notice = document.querySelector('#notice');
     const counter = document.querySelector('#counter');
+    const botStatus = document.querySelector('#botStatus');
+    const botStatusText = document.querySelector('#botStatusText');
     const voiceCards = [...document.querySelectorAll('[data-voice]')];
     let selectedVoice = '__DEFAULT_VOICE__';
     for (const card of voiceCards) {
@@ -242,6 +248,25 @@
       card.setAttribute('aria-pressed', String(active));
     }
     let pendingRequests = 0;
+
+    async function refreshBotStatus() {
+      try {
+        const response = await fetch('/api/status', {cache: 'no-store'});
+        if (!response.ok) throw new Error('status unavailable');
+        const state = await response.json();
+        botStatus.classList.toggle('online', state.ready);
+        botStatus.classList.toggle('offline', !state.ready);
+        botStatusText.textContent = state.ready
+          ? (state.dave_ready === false ? 'Discord подключён · проверка шифрования' : 'Бот подключён к голосовому каналу')
+          : 'Бот не подключён к голосовому каналу';
+      } catch (_) {
+        botStatus.classList.remove('online');
+        botStatus.classList.add('offline');
+        botStatusText.textContent = 'Нет связи с приложением';
+      }
+    }
+    refreshBotStatus();
+    setInterval(refreshBotStatus, 3000);
 
     function setNotice(text, kind = '') {
       notice.className = 'notice ' + kind;
