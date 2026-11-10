@@ -281,16 +281,15 @@ class App:
             VOICE_MODEL,
             VOICE_ASSETS / 'armenian' / 'armenian_tri.yaml',
             VOICE_ASSETS / 'armenian' / 'armenian_reference.wav',
+            VOICE_ASSETS / 'armenian' / 'armenian_voice_state.safetensors',
             VOICE_ASSETS / 'armenian' / 'tri_v1' / 'model.safetensors',
-            VOICE_ASSETS / 'teratts' / 'teratts.py',
-            VOICE_ASSETS / 'teratts' / 'models' / 'text_encoder.onnx',
-            VOICE_ASSETS / 'teratts' / 'styles' / 'ru_m5' / 'style_ttl.npy',
+            VOICE_ASSETS / 'armenian' / 'tri_v1' / 'tokenizer_tri.model',
         )
         missing_voice_files = [path for path in required_voice_files if not path.is_file()]
         if missing_voice_files:
             return messagebox.showerror(
                 APP_NAME,
-                'Не найдены файлы армянского или поп-голоса. Распакуйте ZIP полностью: '
+                'Не найдены файлы армянского голоса. Распакуйте ZIP полностью: '
                 'рядом с VoiceReaderPro.exe должна быть папка voices.',
             )
         try:
