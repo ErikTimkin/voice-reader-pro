@@ -91,6 +91,8 @@ jobs:
           Copy-Item -Path voices/armenian/* -Destination dist/VoiceReaderPro/voices/armenian -Recurse -Force
 
           Copy-Item README.md dist/VoiceReaderPro/README.md -Force
+      - name: Test voices from a relocated offline package
+        run: python tests/packaged_voice_smoke.py --voices-dir dist/VoiceReaderPro/voices
       - name: Confirm output
         shell: pwsh
         run: |
