@@ -58,7 +58,7 @@ async def main_async(source_voices: Path) -> None:
         shutil.copytree(source_voices / "armenian", relocated / "armenian")
         shutil.copytree(source_voices / "teratts", relocated / "teratts")
 
-        pop = TeraPopTTS(relocated / "teratts", lambda message: print(message))
+        pop = TeraPopTTS(relocated / "teratts", lambda _message: None)
         pop_wav = Path(temp) / "portable-pop.wav"
         try:
             await asyncio.to_thread(
@@ -74,7 +74,7 @@ async def main_async(source_voices: Path) -> None:
         gc.collect()
 
         armenian = ArmenianAccentTTS(
-            relocated / "armenian", lambda message: print(message)
+            relocated / "armenian", lambda _message: None
         )
         armenian_wav = Path(temp) / "portable-armenian.wav"
         try:
