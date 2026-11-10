@@ -10,7 +10,7 @@ from voice_reader.voice_profiles import VOICE_PRESETS
 
 def main() -> None:
     if set(VOICE_PRESETS) != {"normal", "female", "cute_girl", "armenian"}:
-        raise AssertionError(f"Expected default, female, Armenian and pop voices: {list(VOICE_PRESETS)}")
+        raise AssertionError(f"Expected male, female, cute and Armenian voices: {list(VOICE_PRESETS)}")
     assert normalize_voice_key("normal") == "normal"
     assert normalize_voice_key("female") == "female"
     assert normalize_voice_key("cute_girl") == "cute_girl"
