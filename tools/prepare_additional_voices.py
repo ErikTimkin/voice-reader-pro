@@ -462,7 +462,6 @@ def main() -> None:
     if not args.ffmpeg.is_file():
         raise FileNotFoundError(args.ffmpeg)
 
-    download_tera(args.voices_dir)
     prepare_armenian(args.voices_dir, args.ffmpeg)
 
 
