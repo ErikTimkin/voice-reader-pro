@@ -413,9 +413,9 @@ def run_frozen_voice_smoke_test(preset: str) -> int:
 
     def log(message: str) -> None:
         with log_path.open("a", encoding="utf-8") as stream:
-            stream.write(str(message) + "\\n")
+            stream.write(str(message) + chr(10))
 
-    log_path.write_text(f"Frozen EXE voice smoke test: {preset}\\n", encoding="utf-8")
+    log_path.write_text(f"Frozen EXE voice smoke test: {preset}" + chr(10), encoding="utf-8")
     output_path.unlink(missing_ok=True)
     try:
         profile = resolve_voice_profile(preset)
