@@ -10,13 +10,6 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 import keyring
 from voice_reader.core import VoiceService
-from voice_reader.voice_profiles import (
-    VOICE_PRESETS,
-    VOICE_PRESET_LABELS,
-    VOICE_LABEL_TO_PRESET,
-    LEGACY_VOICE_IDS,
-)
-
 APP_NAME, TOKEN_KEY = 'Voice Reader Pro', 'discord-token'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[1]
@@ -41,7 +34,6 @@ class App:
         self.events = queue.Queue()
         self.stop_requested = threading.Event()
         self.thread = self.loop = self.service = None
-        self.pasting = False
         DATA.mkdir(parents=True, exist_ok=True)
         cfg = self.load()
 
@@ -123,18 +115,9 @@ class App:
             cell.grid(row=row, column=column, columnspan=columnspan,
                       sticky='ew', padx=(0 if column == 0 else 10, 0), pady=(0, 12))
             ttk.Label(cell, text=label, style='Field.TLabel').pack(anchor='w', pady=(0, 6))
-            if key == 'voice':
-                entry = ttk.Combobox(
-                    cell,
-                    values=list(VOICE_PRESET_LABELS.values()),
-                    state='readonly',
-                )
-                configured_voice = cfg.get('voice', 'normal')
-                preset_key = LEGACY_VOICE_IDS.get(configured_voice, configured_voice)
-                entry.set(VOICE_PRESET_LABELS.get(preset_key, VOICE_PRESETS['normal']['label']))
-            else:
-                entry = ttk.Entry(cell, show=show)
-                entry.insert(0, cfg.get(key, ''))
+            entry = ttk.Entry(cell, show=show)
+            entry.insert(0, cfg.get(key, ''))
+            entry.pack(fill='x')
             entry.pack(fill='x')
             self.fields[key] = entry
 
@@ -146,7 +129,6 @@ class App:
         add_field(fields_grid, 'ТОКЕН DISCORD-БОТА', 'token', show='•', row=0, column=0, columnspan=2)
         add_field(fields_grid, 'ID СЕРВЕРА', 'guild_id', row=1, column=0)
         add_field(fields_grid, 'ID ГОЛОСОВОГО КАНАЛА', 'channel_id', row=1, column=1)
-        add_field(fields_grid, 'ГОЛОС ПО УМОЛЧАНИЮ', 'voice', row=2, column=0, columnspan=2)
 
         controls = ttk.Frame(card, style='Card.TFrame')
         controls.pack(fill='x', pady=(2, 6))
@@ -172,13 +154,14 @@ class App:
         ttk.Label(log_header, text='Журнал работы', style='CardTitle.TLabel').pack(side='left')
         ttk.Label(log_header, text='События Discord · TTS · сервера',
                   style='Muted.TLabel').pack(side='right')
-        ttk.Button(log_header, text='Копировать журнал', style='Copy.TButton',
-                   command=self.copy_log).pack(side='right', padx=(0, 10))
+        ttk.Button(log_header, text='Очистить', style='Copy.TButton', command=self.clear_log).pack(side='right', padx=(0, 8))
+        ttk.Button(log_header, text='Копировать журнал', style='Copy.TButton', command=self.copy_log).pack(side='right', padx=(0, 8))
 
+        self.log = tk.Text(
         self.log = tk.Text(
             log_card,
             height=12,
-            state='disabled',
+            state='normal',
             bg='#080e19',
             fg='#c9d5e8',
             insertbackground=TEXT,
@@ -192,6 +175,10 @@ class App:
             font=('Consolas', 9),
         )
         self.log.pack(fill='both', expand=True)
+        self.log.bind('<Key>', self.protect_log)
+        self.log.bind('<Control-a>', self.select_all_log)
+        self.log.bind('<Control-A>', self.select_all_log)
+        self.log.bind('<Button-3>', self.show_log_menu)
 
         footer = ttk.Label(
             outer,
@@ -225,8 +212,6 @@ class App:
             k: self.fields[k].get().strip()
             for k in ('guild_id', 'channel_id')
         }
-        selected_label = self.fields['voice'].get().strip()
-        settings['voice'] = VOICE_LABEL_TO_PRESET.get(selected_label, 'normal')
         CONFIG.write_text(json.dumps(settings, ensure_ascii=False, indent=2), 'utf-8')
         keyring.set_password(APP_NAME, TOKEN_KEY, self.fields['token'].get().strip())
 
@@ -238,10 +223,8 @@ class App:
             while True:
                 typ, msg = self.events.get_nowait()
                 if typ == 'log':
-                    self.log.configure(state='normal')
                     self.log.insert('end', msg + '\n')
                     self.log.see('end')
-                    self.log.configure(state='disabled')
                 elif typ == 'url':
                     self.link.delete(0, 'end')
                     self.link.insert(0, msg)
@@ -301,8 +284,8 @@ class App:
         self.start.configure(state='disabled')
         self.stop.configure(state='normal')
         self.status.set('Запуск…')
-        selected_voice_label = self.fields['voice'].get().strip()
-        voice_preset = VOICE_LABEL_TO_PRESET.get(selected_voice_label, 'normal')
+        self.thread = threading.Thread(target=self.run,
+            args=(token, guild, channel, 'normal', ffmpeg, cloudflared), daemon=True)
         self.thread = threading.Thread(target=self.run,
             args=(token, guild, channel, voice_preset, ffmpeg, cloudflared), daemon=True)
         self.thread.start()
@@ -402,10 +385,48 @@ class App:
 
     def copy_log(self):
         content = self.log.get('1.0', 'end-1c')
+        if content:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(content)
+            self.root.update_idletasks()
+
+    def copy_selected_log(self):
+        try:
+            content = self.log.get('sel.first', 'sel.last')
+        except tk.TclError:
+            return
         self.root.clipboard_clear()
         self.root.clipboard_append(content)
         self.root.update_idletasks()
 
+    def clear_log(self):
+        self.log.delete('1.0', 'end')
+
+    def protect_log(self, event):
+        if event.state & 0x4 and event.keysym.lower() == 'c':
+            return None
+        if event.state & 0x4 and event.keysym.lower() == 'a':
+            return self.select_all_log(event)
+        if event.keysym in ('Left', 'Right', 'Up', 'Down', 'Home', 'End', 'Prior', 'Next'):
+            return None
+        return 'break'
+
+    def select_all_log(self, event=None):
+        self.log.tag_add('sel', '1.0', 'end-1c')
+        return 'break'
+
+    def show_log_menu(self, event):
+        menu = tk.Menu(self.root, tearoff=0)
+        menu.add_command(label='Копировать выделенное', command=self.copy_selected_log)
+        menu.add_command(label='Выделить всё', command=self.select_all_log)
+        menu.add_separator()
+        menu.add_command(label='Копировать весь журнал', command=self.copy_log)
+        menu.add_command(label='Очистить журнал', command=self.clear_log)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+        return 'break'
     def paste_entry(self, event=None):
         widget = event.widget if event is not None else self.root.focus_get()
         if widget is None:
