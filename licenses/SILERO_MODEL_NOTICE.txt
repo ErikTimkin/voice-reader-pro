@@ -1,0 +1,27 @@
+Voice model notice
+===================
+
+Voice model: Silero Russian TTS v5.6 (v5_6_ru.pt)
+Official model source:
+https://models.silero.ai/models/tts/ru/v5_6_ru.pt
+
+The Silero Models repository publishes its non-CIS v5 TTS models under
+Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International
+(CC BY-NC-SA 4.0). The v5_6_ru model is covered by that repository license.
+This bundled model is intended for personal, non-commercial use only.
+Commercial use requires separate permission from the rights holder.
+
+License text:
+https://github.com/snakers4/silero-models/blob/master/LICENSE
+
+Attribution:
+Silero Team — Silero Models, Russian TTS v5.6
+https://github.com/snakers4/silero-models
+
+This project uses three speaker IDs from the same local model:
+- aidar: ordinary male voice
+- eugene: deeper male voice, selected for the "Pudge-style" preset
+- xenia: friendly female voice
+
+The "Pudge-style" preset is a generic deep male voice, not an exact voice clone
+of the Dota 2 character or its voice actor.
