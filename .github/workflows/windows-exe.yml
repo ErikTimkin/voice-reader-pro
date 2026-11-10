@@ -69,8 +69,10 @@ jobs:
         run: python tests/dave_compat_smoke.py
       - name: Test local Silero voices and event loop
         run: python tests/silero_voice_smoke.py
-      - name: Test Armenian accent and young pop voices
+      - name: Test foreign-accent and young pop voices
         run: python tests/additional_voice_smoke.py
+      - name: Verify voice presets
+        run: python tests/voice_presets_smoke.py
       - name: Smoke-test PCM playback path
         run: python tests/voice_pipeline_smoke.py
       - name: Build EXE
@@ -84,9 +86,6 @@ jobs:
 
           New-Item -ItemType Directory -Force dist/VoiceReaderPro/voices/teratts | Out-Null
           Copy-Item -Path voices/teratts/* -Destination dist/VoiceReaderPro/voices/teratts -Recurse -Force
-
-          New-Item -ItemType Directory -Force dist/VoiceReaderPro/voices/armenian | Out-Null
-          Copy-Item -Path voices/armenian/* -Destination dist/VoiceReaderPro/voices/armenian -Recurse -Force
 
           New-Item -ItemType Directory -Force dist/VoiceReaderPro/samples | Out-Null
           Copy-Item tests/voice-samples/*.wav dist/VoiceReaderPro/samples/ -Force
@@ -107,12 +106,10 @@ jobs:
             'voices/teratts/models/vocoder.onnx',
             'voices/teratts/styles/ru_m5/style_ttl.npy',
             'voices/teratts/styles/ru_m5/style_dp.npy',
-            'voices/armenian/armenian_tri.yaml',
-            'voices/armenian/armenian_reference.wav',
-            'voices/armenian/tri_v1/model.safetensors',
-            'voices/armenian/tri_v1/tokenizer_tri.model',
+            'voices/teratts/styles/eng_m4/style_ttl.npy',
+            'voices/teratts/styles/eng_m4/style_dp.npy',
             'samples/young-pop-ru.wav',
-            'samples/armenian-accent-ru.wav'
+            'samples/foreign-accent-ru.wav'
           )
           foreach ($relative in $extraFiles) {
             if (!(Test-Path (Join-Path 'dist/VoiceReaderPro' $relative))) {
