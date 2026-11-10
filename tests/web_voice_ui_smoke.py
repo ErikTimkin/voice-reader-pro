@@ -11,9 +11,10 @@ from voice_reader.local_tts import VOICE_PRESETS
 def main() -> None:
     assert normalize_voice_key("normal") == "normal"
     assert normalize_voice_key("cute_girl") == "cute_girl"
-    assert normalize_voice_key("armenian") == "armenian"
+    assert normalize_voice_key("accent") == "accent"
     assert normalize_voice_key("pop") == "pop"
-    assert VOICE_PRESETS["armenian"]["engine"] == "armenian"
+    assert VOICE_PRESETS["accent"]["engine"] == "teratts"
+    assert VOICE_PRESETS["accent"]["speaker"] == "eng_m4"
     assert VOICE_PRESETS["pop"]["engine"] == "teratts"
 
     try:
@@ -27,9 +28,9 @@ def main() -> None:
     required = [
         'data-voice="normal"',
         'data-voice="cute_girl"',
-        'data-voice="armenian"',
+        'data-voice="accent"',
         'data-voice="pop"',
-        'Армянский акцент',
+        'Иностранный мужской акцент',
         'Молодой поп-голос',
         'Пудж из Dota 2',
         "event.key === 'Enter'",
