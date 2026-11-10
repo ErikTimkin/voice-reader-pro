@@ -170,6 +170,7 @@ class ArmenianAccentTTS:
 
             config_path = self.model_dir / "armenian_tri.yaml"
             reference_path = self.model_dir / "armenian_reference.wav"
+            voice_state_path = self.model_dir / "armenian_voice_state.safetensors"
             weights_path = self.model_dir / "tri_v1" / "model.safetensors"
             tokenizer_path = self.model_dir / "tri_v1" / "tokenizer_tri.model"
             required = (config_path, reference_path, weights_path, tokenizer_path)
@@ -217,15 +218,27 @@ class ArmenianAccentTTS:
                     )
                     runtime_config_path = Path(runtime_config.name)
 
-                torch.set_num_threads(max(1, min(4, os.cpu_count() or 2)))
+                # Pocket TTS is CPU-bound; allow up to six threads on modern
+                # desktop CPUs while keeping enough headroom for Discord.
+                torch.set_num_threads(max(1, min(6, os.cpu_count() or 2)))
                 self.log("Загружаю многоязычную модель Pocket TTS (армянский + русский)…")
                 model = TTSModel.load_model(config=str(runtime_config_path))
             finally:
                 if runtime_config_path is not None:
                     runtime_config_path.unlink(missing_ok=True)
 
-            self.log("Подготавливаю тембр анонимизированного восточноармянского диктора…")
-            voice_state = model.get_state_for_audio_prompt(str(reference_path))
+            if voice_state_path.is_file():
+                self.log("Загружаю заранее подготовленный тембр армянского диктора…")
+                voice_state = model.get_state_for_audio_prompt(str(voice_state_path))
+            else:
+                self.log("Подготавливаю тембр анонимизированного восточноармянского диктора…")
+                voice_state = model.get_state_for_audio_prompt(str(reference_path))
+                try:
+                    from pocket_tts import export_model_state
+                    export_model_state(voice_state, voice_state_path)
+                    self.log("Тембр сохранён для ускорения следующих запусков.")
+                except Exception as exc:
+                    self.log(f"Не удалось сохранить кэш тембра (продолжаю без него): {exc}")
 
             # The input is Russian. Core normalizes Russian numbers before TTS.
             # Do not load the Armenian-only hy_text.py: it is for Armenian-script
