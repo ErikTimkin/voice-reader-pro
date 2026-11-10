@@ -398,7 +398,8 @@ class VoiceService:
             file_name = None
             done = None
             voice_client = None
-            original_send_audio_packet = None
+            original_send_packet = None
+            original_get_voice_packet = None
 
             try:
                 queue_wait_ms = (time.perf_counter() - enqueued_at) * 1000
@@ -474,23 +475,67 @@ class VoiceService:
 
                 done = asyncio.get_running_loop().create_future()
                 loop = asyncio.get_running_loop()
-                packet_stats = {'count': 0, 'bytes': 0}
-                original_send_audio_packet = voice_client.send_audio_packet
+                packet_stats = {
+                    'opus_frames': 0,
+                    'encrypted_packets': 0,
+                    'udp_sent': 0,
+                    'udp_errors': 0,
+                    'dave_dropped': 0,
+                    'bytes': 0,
+                }
+                # Count at the actual UDP socket boundary. Counting calls to
+                # send_audio_packet alone is misleading: DAVE may intentionally
+                # drop frames before encryption when its session is not ready.
+                original_send_packet = connection_state.send_packet
+                original_get_voice_packet = voice_client._get_voice_packet
 
-                def counted_send_audio_packet(packet_data, *, encode=True):
-                    original_send_audio_packet(packet_data, encode=encode)
-                    packet_stats['count'] += 1
-                    packet_stats['bytes'] += len(packet_data)
+                def counted_get_voice_packet(data):
+                    packet_stats['opus_frames'] += 1
+                    packet = original_get_voice_packet(data)
+                    if packet is None:
+                        packet_stats['dave_dropped'] += 1
+                    else:
+                        packet_stats['encrypted_packets'] += 1
+                    return packet
 
-                voice_client.send_audio_packet = counted_send_audio_packet
+                def counted_udp_send(packet):
+                    try:
+                        result = original_send_packet(packet)
+                    except OSError:
+                        packet_stats['udp_errors'] += 1
+                        raise
+                    packet_stats['udp_sent'] += 1
+                    packet_stats['bytes'] += len(packet)
+                    return result
+
+                voice_client._get_voice_packet = counted_get_voice_packet
+                connection_state.send_packet = counted_udp_send
 
                 def playback_finished(error):
                     def finish_on_loop():
-                        voice_client.send_audio_packet = original_send_audio_packet
+                        voice_client._get_voice_packet = original_get_voice_packet
+                        connection_state.send_packet = original_send_packet
                         self.log(
-                            f'Пакеты Discord: {packet_stats["count"]}; '
-                            f'размер пакетов: {packet_stats["bytes"]} байт.'
+                            'Аудиотракт Discord: '
+                            f'Opus-кадров={packet_stats["opus_frames"]}, '
+                            f'зашифровано={packet_stats["encrypted_packets"]}, '
+                            f'UDP отправлено={packet_stats["udp_sent"]}, '
+                            f'UDP ошибок={packet_stats["udp_errors"]}, '
+                            f'DAVE отбросил={packet_stats["dave_dropped"]}, '
+                            f'байт UDP={packet_stats["bytes"]}.'
                         )
+                        if packet_stats['dave_dropped'] and not packet_stats['udp_sent']:
+                            self.log(
+                                'ОШИБКА: Discord не отправил аудио: DAVE не разрешил шифрование '
+                                'пакетов. Голосовая E2EE-сессия не завершила переход ключей.'
+                            )
+                        elif packet_stats['udp_errors']:
+                            self.log('ОШИБКА: UDP-сокет не смог отправить часть аудиопакетов.')
+                        elif packet_stats['udp_sent'] == 0:
+                            self.log('ОШИБКА: аудиоплеер завершился, но ни одного UDP-пакета не отправлено.')
+                        elif packet_stats['udp_sent'] > 0:
+                            self.log('UDP-сокет принял аудиопакеты для отправки в Discord.')
+
                         if error:
                             self.log(f'Ошибка воспроизведения: {type(error).__name__}: {error!r}')
                         else:
@@ -533,8 +578,10 @@ class VoiceService:
                 try:
                     voice_client.play(source, after=playback_finished, signal_type='voice')
                 except Exception:
-                    voice_client.send_audio_packet = original_send_audio_packet
-                    original_send_audio_packet = None
+                    voice_client._get_voice_packet = original_get_voice_packet
+                    connection_state.send_packet = original_send_packet
+                    original_get_voice_packet = None
+                    original_send_packet = None
                     if engine == "armenian":
                         source.cleanup()
                     raise
@@ -547,8 +594,10 @@ class VoiceService:
                     )
 
             except Exception as exc:
-                if voice_client and original_send_audio_packet is not None:
-                    voice_client.send_audio_packet = original_send_audio_packet
+                if voice_client and original_get_voice_packet is not None:
+                    voice_client._get_voice_packet = original_get_voice_packet
+                if voice_client and original_send_packet is not None:
+                    voice_client._connection.send_packet = original_send_packet
                 self.log(f'Ошибка локального озвучивания: {type(exc).__name__}: {exc}')
             finally:
                 if file_name:
