@@ -12,11 +12,18 @@ def check_wav(path: Path, minimum_size: int = 5000, minimum_duration: float = 0.
     import wave
     if not path.is_file() or path.stat().st_size < minimum_size:
         raise AssertionError(f"Generated WAV is missing or too small: {path}")
+    import numpy as np
     with wave.open(str(path), "rb") as audio:
+        frames = audio.readframes(audio.getnframes())
+        samples = np.frombuffer(frames, dtype=np.int16).astype(np.float64)
         duration = audio.getnframes() / float(audio.getframerate())
+        peak = float(np.max(np.abs(samples))) if samples.size else 0.0
+        rms = float(np.sqrt(np.mean(samples * samples))) if samples.size else 0.0
         if duration < minimum_duration:
             raise AssertionError(f"Generated WAV is too short ({duration:.2f}s): {path}")
-    print(f"{path.name}: {duration:.2f}s, {path.stat().st_size} bytes")
+        if peak < 5000 or rms < 250:
+            raise AssertionError(f"Generated WAV is too quiet (peak={peak:.0f}, RMS={rms:.1f}): {path}")
+    print(f"{path.name}: {duration:.2f}s, {path.stat().st_size} bytes, peak={peak:.0f}, RMS={rms:.1f}")
 
 
 async def main_async() -> None:
