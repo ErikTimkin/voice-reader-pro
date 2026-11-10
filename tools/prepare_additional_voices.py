@@ -370,14 +370,12 @@ def prepare_armenian(root: Path, ffmpeg: Path) -> None:
         allow_patterns=[
             "tri_v1/model.safetensors",
             "tri_v1/tokenizer_tri.model",
-            "configs/hy_text.py",
         ],
     )
 
     weights = target / "tri_v1" / "model.safetensors"
     tokenizer = target / "tri_v1" / "tokenizer_tri.model"
-    text_module = target / "configs" / "hy_text.py"
-    for path in (weights, tokenizer, text_module):
+    for path in (weights, tokenizer):
         if not path.is_file() or path.stat().st_size < 100:
             raise RuntimeError(f"Armenian model file is missing or incomplete: {path}")
 
@@ -423,7 +421,7 @@ def prepare_armenian(root: Path, ffmpeg: Path) -> None:
         "https://github.com/kyutai-labs/pocket-tts\n",
         encoding="utf-8",
     )
-    print("Armenian Pocket TTS model, Russian normalizer and synthetic reference clip verified.", flush=True)
+    print("Armenian/Russian/English Pocket TTS model and synthetic male reference clip verified.", flush=True)
 
 
 def main() -> None:

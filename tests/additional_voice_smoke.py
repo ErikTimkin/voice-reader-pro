@@ -40,8 +40,9 @@ async def main_async() -> None:
     gc.collect()
 
     armenian_assets = ROOT / "voices" / "armenian"
-    if not (armenian_assets / "configs" / "hy_text.py").is_file():
-        raise AssertionError("Armenian text normalizer is missing from configs/hy_text.py")
+    for required in ("armenian_tri.yaml", "tri_v1/model.safetensors", "tri_v1/tokenizer_tri.model", "armenian_reference.wav"):
+        if not (armenian_assets / required).is_file():
+            raise AssertionError(f"Armenian voice resource is missing: {required}")
     armenian = ArmenianAccentTTS(armenian_assets, lambda _message: None)
     armenian_path = samples / "armenian-accent-ru.wav"
     try:

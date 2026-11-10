@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import gc
 import importlib
-import importlib.util
 import os
 import sys
 import wave
@@ -112,7 +111,6 @@ class ArmenianAccentTTS:
         self.log = logger
         self.model = None
         self.voice_state = None
-        self.normalise_ru = None
         self._load_lock = Lock()
         self._synthesis_lock = Lock()
 
@@ -125,8 +123,7 @@ class ArmenianAccentTTS:
 
             config_path = self.model_dir / "armenian_tri.yaml"
             reference_path = self.model_dir / "armenian_reference.wav"
-            text_module_path = self.model_dir / "configs" / "hy_text.py"
-            for path in (config_path, reference_path, text_module_path):
+            for path in (config_path, reference_path):
                 if not path.is_file():
                     raise FileNotFoundError(f"Не найден ресурс армянского голоса: {path}")
 
@@ -144,27 +141,18 @@ class ArmenianAccentTTS:
             self.log("Подготавливаю тембр анонимизированного восточноармянского диктора…")
             voice_state = model.get_state_for_audio_prompt(str(reference_path))
 
-            spec = importlib.util.spec_from_file_location(
-                "voice_reader_armenian_text", text_module_path
-            )
-            if spec is None or spec.loader is None:
-                raise RuntimeError("Не удалось загрузить нормализатор армянской модели.")
-            text_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(text_module)
-            normaliser = getattr(text_module, "normalise_ru", None)
-            if not callable(normaliser):
-                raise RuntimeError("В языковом пакете отсутствует normalise_ru().")
-
+            # The input is Russian. Core normalizes Russian numbers before TTS.
+            # Do not load the Armenian-only hy_text.py: it is for Armenian-script
+            # text and is not part of the Russian cross-lingual inference path.
             self.model = model
             self.voice_state = voice_state
-            self.normalise_ru = normaliser
             self.log("Армянский акцент готов: русский текст, восточноармянский референс.")
 
     def synthesize_to_wav(self, text: str, target_path: str | Path) -> tuple[int, float]:
         self.load()
-        prepared_text = self.normalise_ru(text)
-        if not isinstance(prepared_text, str) or not prepared_text.strip():
-            raise RuntimeError("Нормализатор армянской модели вернул пустой текст.")
+        prepared_text = str(text).strip()
+        if not prepared_text:
+            raise RuntimeError("Для армянского голоса передан пустой текст.")
 
         with self._synthesis_lock:
             audio = self.model.generate_audio(
@@ -179,5 +167,4 @@ class ArmenianAccentTTS:
             self.log("Освобождаю память армянской модели…")
         self.voice_state = None
         self.model = None
-        self.normalise_ru = None
         gc.collect()
