@@ -110,7 +110,7 @@ class StreamingPCMSource(discord.AudioSource):
                 return
             frame = payload[offset:offset + self.FRAME_BYTES]
             if len(frame) < self.FRAME_BYTES:
-                frame += b"\\x00" * (self.FRAME_BYTES - len(frame))
+                frame += bytes(self.FRAME_BYTES - len(frame))
             while not self.stop_event.is_set():
                 try:
                     self._frames.put(frame, timeout=0.1)
