@@ -101,8 +101,8 @@ jobs:
             $logPath = Join-Path $env:TEMP "VoiceReaderPro-smoke-$voice.log"
             Remove-Item $logPath -Force -ErrorAction SilentlyContinue
             Write-Host "Testing packaged EXE voice: $voice"
-            & $exe --voice-smoke-test $voice
-            $exitCode = $LASTEXITCODE
+            $process = Start-Process -FilePath $exe -ArgumentList @('--voice-smoke-test', $voice) -Wait -PassThru -WindowStyle Hidden
+            $exitCode = $process.ExitCode
             if ($exitCode -ne 0) {
               if (Test-Path $logPath) { Get-Content $logPath }
               throw "Packaged EXE voice smoke test failed: $voice (exit code $exitCode)"
