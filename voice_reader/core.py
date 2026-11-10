@@ -263,6 +263,7 @@ class VoiceService:
     async def start(self):
         app = web.Application(client_max_size=2048)
         app.router.add_get('/', self.index)
+        app.router.add_get('/api/status', self.status)
         app.router.add_post('/api/speak', self.speak)
         self.runner = web.AppRunner(app)
         await self.runner.setup()
@@ -354,6 +355,20 @@ class VoiceService:
             charset='utf-8',
             headers={'Cache-Control': 'no-store'},
         )
+
+    async def status(self, request):
+        voice_client = self.voice_client
+        connected = bool(voice_client and voice_client.is_connected())
+        dave_ready = None
+        if connected:
+            state = voice_client._connection
+            dave_ready = getattr(state, 'can_encrypt', None)
+        return web.json_response({
+            'connected': connected,
+            'ready': bool(self.ready.is_set() and connected),
+            'dave_ready': dave_ready,
+            'queue_size': self.queue.qsize(),
+        })
 
     async def speak(self, request):
         request_started = time.perf_counter()
