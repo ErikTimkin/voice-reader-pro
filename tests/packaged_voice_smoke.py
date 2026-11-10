@@ -17,11 +17,18 @@ from voice_reader.additional_tts import ArmenianAccentTTS, TeraPopTTS
 def verify_wav(path: Path, minimum_bytes: int = 5_000) -> None:
     if not path.is_file() or path.stat().st_size < minimum_bytes:
         raise AssertionError(f"Voice did not create a valid WAV file: {path}")
+    import numpy as np
     with wave.open(str(path), "rb") as wav:
+        raw_samples = wav.readframes(wav.getnframes())
+        samples = np.frombuffer(raw_samples, dtype=np.int16).astype(np.float64)
         duration = wav.getnframes() / float(wav.getframerate())
+    peak = float(np.max(np.abs(samples))) if samples.size else 0.0
+    rms = float(np.sqrt(np.mean(samples * samples))) if samples.size else 0.0
     if duration < 0.5:
         raise AssertionError(f"Voice output is unexpectedly short: {duration:.2f}s")
-    print(f"{path.name}: {duration:.2f}s, {path.stat().st_size} bytes")
+    if peak < 5000 or rms < 250:
+        raise AssertionError(f"Voice output is nearly silent: peak={peak:.0f}, RMS={rms:.1f}")
+    print(f"{path.name}: {duration:.2f}s, {path.stat().st_size} bytes, peak={peak:.0f}, RMS={rms:.1f}")
 
 
 async def main_async(source_voices: Path) -> None:
