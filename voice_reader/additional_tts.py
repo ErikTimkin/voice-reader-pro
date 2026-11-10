@@ -35,10 +35,11 @@ def _write_audio_wav(audio, sample_rate: int, target_path: str | Path) -> tuple[
     return target_path.stat().st_size, len(pcm) / sample_rate
 
 
-class TeraPopTTS:
-    """Local TeraTTSv2 Russian male voice (ru_m5); no celebrity voice cloning."""
+class TeraTTS:
+    """Offline TeraTTSv2 runtime for Russian and cross-language accent styles."""
 
     SAMPLE_RATE = 44_100
+    VOICE_STYLES = {"ru_m5", "eng_m4"}
 
     def __init__(self, model_dir: str | Path, logger):
         self.model_dir = Path(model_dir)
@@ -56,15 +57,13 @@ class TeraPopTTS:
                 return
             script = self.model_dir / "teratts.py"
             if not script.is_file():
-                raise FileNotFoundError(
-                    f"Не найдена локальная модель молодого мужского голоса: {script}"
-                )
+                raise FileNotFoundError(f"Не найдена локальная модель TeraTTSv2: {script}")
 
             model_path = str(self.model_dir.resolve())
             if model_path not in sys.path:
                 sys.path.insert(0, model_path)
             importlib.invalidate_caches()
-            self.log("Загружаю локальную модель TeraTTSv2 (мужской голос ru_m5)…")
+            self.log("Загружаю TeraTTSv2 (локальный ONNX, CPU)…")
             module = importlib.import_module("teratts")
             threads = max(1, min(6, (os.cpu_count() or 2) // 2))
             loaded = module.load_model(
@@ -76,23 +75,38 @@ class TeraPopTTS:
             )
             self.module = module
             self.model = loaded
-            self.log(f"TeraTTSv2 готова: CPUExecutionProvider, потоков={threads}, голос=ru_m5.")
+            self.log(f"TeraTTSv2 готова: CPUExecutionProvider, потоков={threads}.")
 
-    def synthesize_to_wav(self, text: str, target_path: str | Path) -> tuple[int, float]:
+    def synthesize_to_wav(
+        self,
+        text: str,
+        target_path: str | Path,
+        voice_style: str = "ru_m5",
+    ) -> tuple[int, float]:
+        voice_style = str(voice_style or "ru_m5")
+        if voice_style not in self.VOICE_STYLES:
+            raise ValueError(f"Неподдерживаемый стиль TeraTTSv2: {voice_style}")
+        prepared_text = str(text).strip()
+        if not prepared_text:
+            raise RuntimeError("Для озвучивания передан пустой текст.")
+
         self.load()
+        # TeraSpace recommends starting at 0.8 when an English reference style
+        # is used to speak Russian text. Keep the native Russian preset speed.
+        duration_scale = 0.8 if voice_style.startswith("eng_") else 0.94
         with self._synthesis_lock:
             audio = self.module.generate_speech(
                 self.model,
-                f"<ru>{text}</ru>",
-                "ru_m5",
-                duration_scale=0.94,
+                f"<ru>{prepared_text}</ru>",
+                voice_style,
+                duration_scale=duration_scale,
                 guidance=3.0,
             )
         return _write_audio_wav(audio, self.SAMPLE_RATE, target_path)
 
     def unload(self) -> None:
         if self.model is not None:
-            self.log("Освобождаю память модели TeraTTSv2…")
+            self.log("Освобождаю память TeraTTSv2…")
         self.model = None
         if self.module is not None:
             try:
@@ -100,71 +114,4 @@ class TeraPopTTS:
             except Exception:
                 pass
         self.module = None
-        gc.collect()
-
-
-class ArmenianAccentTTS:
-    """Russian speech conditioned on an anonymized Eastern Armenian speaker sample."""
-
-    def __init__(self, model_dir: str | Path, logger):
-        self.model_dir = Path(model_dir)
-        self.log = logger
-        self.model = None
-        self.voice_state = None
-        self._load_lock = Lock()
-        self._synthesis_lock = Lock()
-
-    def load(self) -> None:
-        if self.model is not None:
-            return
-        with self._load_lock:
-            if self.model is not None:
-                return
-
-            config_path = self.model_dir / "armenian_tri.yaml"
-            reference_path = self.model_dir / "armenian_reference.wav"
-            for path in (config_path, reference_path):
-                if not path.is_file():
-                    raise FileNotFoundError(f"Не найден ресурс армянского голоса: {path}")
-
-            try:
-                import torch
-                from pocket_tts import TTSModel
-            except ImportError as exc:
-                raise RuntimeError(
-                    "Для армянского голоса не установлены компоненты Pocket TTS."
-                ) from exc
-
-            torch.set_num_threads(max(1, min(4, os.cpu_count() or 2)))
-            self.log("Загружаю многоязычную модель Pocket TTS (армянский + русский)…")
-            model = TTSModel.load_model(config=str(config_path))
-            self.log("Подготавливаю тембр анонимизированного восточноармянского диктора…")
-            voice_state = model.get_state_for_audio_prompt(str(reference_path))
-
-            # The input is Russian. Core normalizes Russian numbers before TTS.
-            # Do not load the Armenian-only hy_text.py: it is for Armenian-script
-            # text and is not part of the Russian cross-lingual inference path.
-            self.model = model
-            self.voice_state = voice_state
-            self.log("Армянский акцент готов: русский текст, восточноармянский референс.")
-
-    def synthesize_to_wav(self, text: str, target_path: str | Path) -> tuple[int, float]:
-        self.load()
-        prepared_text = str(text).strip()
-        if not prepared_text:
-            raise RuntimeError("Для армянского голоса передан пустой текст.")
-
-        with self._synthesis_lock:
-            audio = self.model.generate_audio(
-                self.voice_state,
-                prepared_text,
-                copy_state=True,
-            )
-        return _write_audio_wav(audio, self.model.sample_rate, target_path)
-
-    def unload(self) -> None:
-        if self.model is not None:
-            self.log("Освобождаю память армянской модели…")
-        self.voice_state = None
-        self.model = None
         gc.collect()
