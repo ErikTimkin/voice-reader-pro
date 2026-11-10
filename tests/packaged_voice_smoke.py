@@ -5,7 +5,11 @@ import asyncio
 import shutil
 import tempfile
 import wave
+import sys
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 from voice_reader.additional_tts import ArmenianAccentTTS, TeraPopTTS
 
