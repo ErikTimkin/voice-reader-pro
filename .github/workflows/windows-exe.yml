@@ -76,6 +76,8 @@ jobs:
         run: python tests/audio_export_smoke.py
       - name: Test Armenian TTS Russian text normalization
         run: python tests/armenian_text_smoke.py
+      - name: Test Armenian streaming PCM output
+        run: python tests/armenian_stream_smoke.py
       - name: Test Armenian accent and young pop voices
         run: python tests/additional_voice_smoke.py
       - name: Smoke-test PCM playback path
