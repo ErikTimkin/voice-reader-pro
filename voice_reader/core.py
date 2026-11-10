@@ -12,7 +12,7 @@ import aiohttp
 from aiohttp import web
 import discord
 from voice_reader.local_tts import LocalSileroTTS, VOICE_PRESETS, resolve_voice_profile
-from voice_reader.additional_tts import ArmenianAccentTTS, TeraPopTTS
+from voice_reader.additional_tts import TeraTTS
 from voice_reader.number_normalizer import normalize_numbers_for_speech
 
 MAX_TEXT = 350
@@ -83,8 +83,7 @@ class VoiceService:
         self.voice, self.ffmpeg, self.log = voice, str(ffmpeg), logger
         self.local_tts = LocalSileroTTS(tts_model_path, logger)
         voice_assets = Path(tts_model_path).parent
-        self.armenian_tts = ArmenianAccentTTS(voice_assets / "armenian", logger)
-        self.pop_tts = TeraPopTTS(voice_assets / "teratts", logger)
+        self.tera_tts = TeraTTS(voice_assets / "teratts", logger)
         self.tts_ready = asyncio.Event()
         self.tts_error = None
         # Unbounded FIFO: users can submit repeatedly without per-minute throttling.
@@ -361,17 +360,12 @@ class VoiceService:
                         profile["speaker"],
                         file_name,
                     )
-                elif engine == "armenian":
-                    audio_bytes, audio_duration = await asyncio.to_thread(
-                        self.armenian_tts.synthesize_to_wav,
-                        speech_text,
-                        file_name,
-                    )
                 elif engine == "teratts":
                     audio_bytes, audio_duration = await asyncio.to_thread(
-                        self.pop_tts.synthesize_to_wav,
+                        self.tera_tts.synthesize_to_wav,
                         speech_text,
                         file_name,
+                        profile.get("speaker", "ru_m5"),
                     )
                 else:
                     raise RuntimeError(f"Неизвестный движок озвучивания: {engine}")
