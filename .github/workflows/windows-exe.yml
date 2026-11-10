@@ -66,7 +66,7 @@ jobs:
         run: python -m compileall -q voice_reader tests
       - name: Test Russian number pronunciation
         run: python tests/number_normalizer_smoke.py
-      - name: Test web voice selector and Enter behavior
+      - name: Test four voice selector and Enter behavior
         run: python tests/web_voice_ui_smoke.py
       - name: Verify DAVE 0.2 and Opus voice support
         run: python tests/dave_compat_smoke.py
