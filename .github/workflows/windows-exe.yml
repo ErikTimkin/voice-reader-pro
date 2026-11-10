@@ -2,7 +2,7 @@ name: Build Windows EXE
 on:
   workflow_dispatch:
   push:
-    branches: [main, fix/armenian-pop-runtime]
+    branches: [main, fix/armenian-pop-runtime, experiment/four-voice-pack]
 permissions:
   contents: read
 concurrency:
@@ -70,7 +70,7 @@ jobs:
         run: python tests/web_voice_ui_smoke.py
       - name: Verify DAVE 0.2 and Opus voice support
         run: python tests/dave_compat_smoke.py
-      - name: Test default and female Silero voices
+      - name: Test male, female and cute Silero voices
         run: python tests/silero_voice_smoke.py
       - name: Test additional voice WAV level normalization
         run: python tests/audio_export_smoke.py
@@ -78,7 +78,7 @@ jobs:
         run: python tests/armenian_text_smoke.py
       - name: Test Armenian streaming PCM output
         run: python tests/armenian_stream_smoke.py
-      - name: Test Armenian accent and young pop voices
+      - name: Test Armenian accent voice
         run: python tests/additional_voice_smoke.py
       - name: Smoke-test PCM playback path
         run: python tests/voice_pipeline_smoke.py
@@ -90,20 +90,17 @@ jobs:
           New-Item -ItemType Directory -Force dist/VoiceReaderPro/voices | Out-Null
           Copy-Item voices/v5_6_ru.pt dist/VoiceReaderPro/voices/v5_6_ru.pt -Force
           Copy-Item voices/SILERO_MODEL_NOTICE.txt dist/VoiceReaderPro/voices/SILERO_MODEL_NOTICE.txt -Force
-          New-Item -ItemType Directory -Force dist/VoiceReaderPro/voices/teratts | Out-Null
-          Copy-Item -Path voices/teratts/* -Destination dist/VoiceReaderPro/voices/teratts -Recurse -Force
-
           New-Item -ItemType Directory -Force dist/VoiceReaderPro/voices/armenian | Out-Null
           Copy-Item -Path voices/armenian/* -Destination dist/VoiceReaderPro/voices/armenian -Recurse -Force
 
           Copy-Item README.md dist/VoiceReaderPro/README.md -Force
       - name: Test voices from a relocated offline package
         run: python tests/packaged_voice_smoke.py --voices-dir dist/VoiceReaderPro/voices
-      - name: Smoke-test all four voices from the packaged EXE
+      - name: Smoke-test all four requested voices from the packaged EXE
         shell: pwsh
         run: |
           $exe = Join-Path $PWD 'dist/VoiceReaderPro/VoiceReaderPro.exe'
-          foreach ($voice in @('normal', 'cute_girl', 'armenian', 'pop')) {
+          foreach ($voice in @('normal', 'female', 'cute_girl', 'armenian')) {
             $logPath = Join-Path $env:TEMP "VoiceReaderPro-smoke-$voice.log"
             Remove-Item $logPath -Force -ErrorAction SilentlyContinue
             Write-Host "Testing packaged EXE voice: $voice"
@@ -130,13 +127,6 @@ jobs:
           if (!(Test-Path dist/VoiceReaderPro/voices/v5_6_ru.pt)) { throw 'Default/female Silero model is missing' }
           if ((Get-Item dist/VoiceReaderPro/voices/v5_6_ru.pt).Length -lt 50000000) { throw 'Silero model is incomplete' }
           $extraFiles = @(
-            'voices/teratts/teratts.py',
-            'voices/teratts/models/text_encoder.onnx',
-            'voices/teratts/models/duration_predictor.onnx',
-            'voices/teratts/models/sampler_distilled_cfg3_8step.onnx',
-            'voices/teratts/models/vocoder.onnx',
-            'voices/teratts/styles/ru_m5/style_ttl.npy',
-            'voices/teratts/styles/ru_m5/style_dp.npy',
             'voices/armenian/armenian_tri.yaml',
             'voices/armenian/armenian_reference.wav',
             'voices/armenian/armenian_voice_state.safetensors',
