@@ -10,7 +10,7 @@ from pathlib import Path
 from tkinter import messagebox, ttk
 import keyring
 from voice_reader.core import VoiceService
-from voice_reader.local_tts import (
+from voice_reader.voice_profiles import (
     VOICE_PRESETS,
     VOICE_PRESET_LABELS,
     VOICE_LABEL_TO_PRESET,
@@ -20,7 +20,7 @@ from voice_reader.local_tts import (
 APP_NAME, TOKEN_KEY = 'Voice Reader Pro', 'discord-token'
 ROOT = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parents[1]))
 APP_DIR = Path(sys.executable).resolve().parent if getattr(sys, 'frozen', False) else Path(__file__).resolve().parents[1]
-VOICE_MODEL = APP_DIR / 'voices' / 'v5_6_ru.pt'
+VOICE_ASSETS = APP_DIR / 'voices'
 DATA = Path(os.getenv('APPDATA', Path.home())) / 'VoiceReaderPro'
 CONFIG = DATA / 'config.json'
 
@@ -127,9 +127,9 @@ class App:
                     values=list(VOICE_PRESET_LABELS.values()),
                     state='readonly',
                 )
-                configured_voice = cfg.get('voice', 'normal')
+                configured_voice = cfg.get('voice', 'armenian')
                 preset_key = LEGACY_VOICE_IDS.get(configured_voice, configured_voice)
-                entry.set(VOICE_PRESET_LABELS.get(preset_key, VOICE_PRESETS['normal']['label']))
+                entry.set(VOICE_PRESET_LABELS.get(preset_key, VOICE_PRESETS['armenian']['label']))
             else:
                 entry = ttk.Entry(cell, show=show)
                 entry.insert(0, cfg.get(key, ''))
@@ -222,7 +222,7 @@ class App:
             for k in ('guild_id', 'channel_id')
         }
         selected_label = self.fields['voice'].get().strip()
-        settings['voice'] = VOICE_LABEL_TO_PRESET.get(selected_label, 'normal')
+        settings['voice'] = VOICE_LABEL_TO_PRESET.get(selected_label, 'armenian')
         CONFIG.write_text(json.dumps(settings, ensure_ascii=False, indent=2), 'utf-8')
         keyring.set_password(APP_NAME, TOKEN_KEY, self.fields['token'].get().strip())
 
@@ -274,10 +274,20 @@ class App:
         ffmpeg, cloudflared = tool('ffmpeg'), tool('cloudflared')
         if not ffmpeg or not cloudflared:
             return messagebox.showerror(APP_NAME, 'Не найдены встроенные FFmpeg или cloudflared.')
-        if not VOICE_MODEL.is_file():
+        required_voice_files = (
+            VOICE_ASSETS / 'armenian' / 'armenian_tri.yaml',
+            VOICE_ASSETS / 'armenian' / 'armenian_reference.wav',
+            VOICE_ASSETS / 'armenian' / 'tri_v1' / 'model.safetensors',
+            VOICE_ASSETS / 'teratts' / 'teratts.py',
+            VOICE_ASSETS / 'teratts' / 'models' / 'text_encoder.onnx',
+            VOICE_ASSETS / 'teratts' / 'styles' / 'ru_m5' / 'style_ttl.npy',
+        )
+        missing_voice_files = [path for path in required_voice_files if not path.is_file()]
+        if missing_voice_files:
             return messagebox.showerror(
                 APP_NAME,
-                'Не найдена локальная модель голосов. Распакуйте ZIP целиком: рядом с VoiceReaderPro.exe должна быть папка voices.',
+                'Не найдены файлы армянского или поп-голоса. Распакуйте ZIP полностью: '
+                'рядом с VoiceReaderPro.exe должна быть папка voices.',
             )
         try:
             self.save()
@@ -287,7 +297,7 @@ class App:
         self.stop.configure(state='normal')
         self.status.set('Запуск…')
         selected_voice_label = self.fields['voice'].get().strip()
-        voice_preset = VOICE_LABEL_TO_PRESET.get(selected_voice_label, 'normal')
+        voice_preset = VOICE_LABEL_TO_PRESET.get(selected_voice_label, 'armenian')
         self.thread = threading.Thread(target=self.run,
             args=(token, guild, channel, voice_preset, ffmpeg, cloudflared), daemon=True)
         self.thread.start()
@@ -299,7 +309,7 @@ class App:
 
     async def run_async(self, token, guild, channel, voice, ffmpeg, cloudflared):
         try:
-            self.service = VoiceService(token, guild, channel, voice, ffmpeg, self.emit, VOICE_MODEL)
+            self.service = VoiceService(token, guild, channel, voice, ffmpeg, self.emit, VOICE_ASSETS)
             await self.service.start()
             p = await asyncio.create_subprocess_exec(cloudflared, 'tunnel', '--url',
                 'http://127.0.0.1:8765', '--no-autoupdate',
