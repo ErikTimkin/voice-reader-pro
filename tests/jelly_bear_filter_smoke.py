@@ -55,7 +55,7 @@ def main() -> None:
         # Verify the pitch-shift stage independently. The following atempo
         # stage is a time-stretcher; measuring a pure sine after WSOLA can
         # produce misleading spectral peaks even when speech sounds correct.
-        render(FFMPEG, "sine=frequency=440:duration=1", PITCH_FILTER, pitch_output)
+        render(FFMPEG, "sine=frequency=440:sample_rate=48000:duration=1", PITCH_FILTER, pitch_output)
         pitch_rate, pitch_samples, pitch_duration = read_wav(pitch_output)
         if pitch_rate != 48000 or not 0.75 <= pitch_duration <= 0.9:
             raise AssertionError(
@@ -70,7 +70,7 @@ def main() -> None:
 
         # Exercise the exact complete production filter and ensure it returns
         # valid, audible 48 kHz PCM with the expected near-original duration.
-        render(FFMPEG, "sine=frequency=440:duration=1", FULL_FILTER, full_output)
+        render(FFMPEG, "sine=frequency=440:sample_rate=48000:duration=1", FULL_FILTER, full_output)
         full_rate, full_samples, full_duration = read_wav(full_output)
         if full_rate != 48000 or not 0.88 <= full_duration <= 1.05:
             raise AssertionError(
