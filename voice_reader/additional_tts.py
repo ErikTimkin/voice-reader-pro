@@ -15,6 +15,20 @@ import numpy as np
 import yaml
 
 
+def _stream_normalization_gain(peak: float) -> float:
+    """Return one bounded gain for a whole Pocket TTS stream."""
+    peak = float(peak)
+    if not np.isfinite(peak) or peak < 1e-5:
+        raise RuntimeError(
+            f"Армянская модель вернула практически тишину (peak={peak:.6f})."
+        )
+    # Pocket TTS streaming chunks can be valid speech at extremely low levels
+    # (observed around peak=0.0011). Use one gain for the entire utterance so
+    # chunk-to-chunk volume does not pump. Buffer a few opening chunks to
+    # estimate the level before playback begins.
+    return min(0.35 / peak, 256.0)
+
+
 def _write_audio_wav(audio, sample_rate: int, target_path: str | Path) -> tuple[int, float]:
     target_path = Path(target_path)
     if hasattr(audio, "detach"):
@@ -319,13 +333,24 @@ class ArmenianAccentTTS:
         sample_count = 0
         peak = 0.0
         with self._synthesis_lock:
-            for chunk in self.model.generate_audio_stream(
+            stream = iter(self.model.generate_audio_stream(
                 self.voice_state,
                 prepared_text,
                 copy_state=True,
                 stop=source.stop_event,
-            ):
+            ))
+
+            # Calibrate from the first few non-empty chunks, then keep one
+            # fixed gain for the entire utterance. Normalizing each chunk
+            # independently causes audible volume pumping.
+            calibration_chunks = []
+            calibration_peak = 0.0
+            for _ in range(3):
                 if source.stop_event.is_set():
+                    break
+                try:
+                    chunk = next(stream)
+                except StopIteration:
                     break
                 if hasattr(chunk, "detach"):
                     samples = chunk.detach().to("cpu").numpy()
@@ -336,12 +361,48 @@ class ArmenianAccentTTS:
                     continue
                 if first_chunk_ms is None:
                     first_chunk_ms = (time.perf_counter() - started) * 1000
+                calibration_chunks.append(samples)
+                calibration_peak = max(
+                    calibration_peak, float(np.max(np.abs(samples)))
+                )
+
+            if not calibration_chunks:
+                source.finish(RuntimeError("Pocket TTS не выдала аудиочанки."))
+                return
+            try:
+                gain = _stream_normalization_gain(calibration_peak)
+            except RuntimeError as exc:
+                source.finish(exc)
+                return
+            self.log(
+                f"Уровень армянского потока: исходный peak={calibration_peak:.6f}; "
+                f"единое усиление={gain:.1f}x; целевой peak≈{calibration_peak * gain:.3f}."
+            )
+
+            def send_chunk(samples):
+                nonlocal chunks, sample_count, peak
+                if source.stop_event.is_set():
+                    return
+                normalized = np.asarray(samples * np.float32(gain), dtype=np.float32)
                 chunks += 1
-                sample_count += int(samples.size)
-                peak = max(peak, float(np.max(np.abs(samples))))
+                sample_count += int(normalized.size)
+                peak = max(peak, float(np.max(np.abs(normalized))))
                 # Pocket TTS emits 24 kHz mono. Discord PCM expects 48 kHz,
                 # 16-bit stereo, in exact 20 ms frames (3,840 bytes).
-                source.push_mono_24k(samples)
+                source.push_mono_24k(normalized)
+
+            for samples in calibration_chunks:
+                send_chunk(samples)
+            for chunk in stream:
+                if source.stop_event.is_set():
+                    break
+                if hasattr(chunk, "detach"):
+                    samples = chunk.detach().to("cpu").numpy()
+                else:
+                    samples = np.asarray(chunk)
+                samples = np.asarray(samples, dtype=np.float32).reshape(-1)
+                if samples.size:
+                    send_chunk(samples)
         elapsed = time.perf_counter() - started
         audio_seconds = sample_count / float(self.model.sample_rate)
         rtf = (elapsed / audio_seconds) if audio_seconds > 0 else float("inf")
