@@ -219,7 +219,7 @@ class VoiceService:
                 current = guild.voice_client
                 if current and current.is_connected():
                     if current.channel and current.channel.id != channel.id:
-                       self.log(f'Бот уже в канале «{current.channel.name}», перемещаю в «{channel.name}».')
+                        self.log(f'Бот уже в канале «{current.channel.name}», перемещаю в «{channel.name}».')
                         await current.move_to(channel)
                     self.voice_client = current
                     self.ready.set()
