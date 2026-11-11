@@ -602,6 +602,7 @@ def run_frozen_voice_smoke_test(preset: str) -> int:
             del tts
         elif engine == "teratts":
             tts = TeraPopTTS(VOICE_ASSETS / "teratts", log)
+            tts.warmup()
             size, duration = tts.synthesize_to_wav(sample_text, output_path)
             tts.unload()
             del tts
