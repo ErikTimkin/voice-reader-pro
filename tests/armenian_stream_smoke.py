@@ -35,9 +35,55 @@ def main() -> None:
     if int(np.max(np.abs(pcm))) < 27000:
         raise AssertionError("Normalized Armenian PCM is still too quiet.")
 
-    # Exercise the real Armenian streaming method with a fake Pocket TTS
-    # generator. This catches regressions where WAV export is normalized but
-    # the Discord streaming path still forwards raw low-level chunks.
+    # Verify that a long utterance begins feeding Discord before Pocket TTS
+    # finishes generating the complete message (the old implementation buffered
+    # every chunk and only sent audio after the generator returned).
+    class TrackingSource:
+        def __init__(self, model):
+            import threading
+            self.stop_event = threading.Event()
+            self.model = model
+            self.pushes_before_generation_finished = 0
+            self.total_pushes = 0
+            self.errors = []
+
+        def push_mono_24k(self, samples):
+            self.total_pushes += 1
+            if not self.model.finished:
+                self.pushes_before_generation_finished += 1
+            self.last_peak = max(self.last_peak if hasattr(self, "last_peak") else 0.0,
+                                 float(np.max(np.abs(samples))))
+
+        def finish(self, error=None):
+            if error:
+                self.errors.append(error)
+
+    class StreamingPocketModel:
+        sample_rate = 24000
+
+        def __init__(self):
+            self.finished = False
+
+        def generate_audio_stream(self, _voice_state, _text, copy_state, stop):
+            if not copy_state:
+                raise AssertionError("Pocket TTS stream must use an isolated voice state")
+            for _ in range(6):
+                yield quiet_wave[:960]
+            self.finished = True
+
+    streaming_model = StreamingPocketModel()
+    streaming_armenian = ArmenianAccentTTS(ROOT / "unused-armenian-model", lambda _message: None)
+    streaming_armenian.model = streaming_model
+    streaming_armenian.voice_state = object()
+    tracking_source = TrackingSource(streaming_model)
+    streaming_armenian.stream_to_source("Проверка быстрого начала армянской речи", tracking_source)
+    if tracking_source.pushes_before_generation_finished < 1:
+        raise AssertionError("Armenian stream buffered the whole message before sending its first audio chunk")
+    if tracking_source.last_peak < 0.80:
+        raise AssertionError(f"Streaming Armenian prefill was not normalized: {tracking_source.last_peak}")
+    if tracking_source.errors:
+        raise AssertionError(f"Streaming Armenian source reported an error: {tracking_source.errors}")
+
     class QuietPocketModel:
         sample_rate = 24000
 
