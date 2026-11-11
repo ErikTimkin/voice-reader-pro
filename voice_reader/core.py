@@ -166,9 +166,7 @@ class VoiceService:
         self.tts_error = None
         self.armenian_ready = asyncio.Event()
         self.armenian_error = None
-        self.pop_ready = asyncio.Event()
-        self.pop_error = None
-        # Unbounded FIFO: users can submit repeatedly without per-minute throttling.
+         # Unbounded FIFO: users can submit repeatedly without per-minute throttling.
         self.queue = asyncio.Queue()
         self.client = discord.Client(intents=discord.Intents(guilds=True, voice_states=True))
         self.runner = self.site = self.tunnel = self.worker = self.discord_task = self.start_watchdog = None
@@ -280,8 +278,7 @@ class VoiceService:
         self.worker = asyncio.create_task(self.play_worker())
         self.tts_load_task = asyncio.create_task(self._load_local_tts())
         self.armenian_load_task = asyncio.create_task(self._preload_armenian_tts())
-        self.pop_load_task = asyncio.create_task(self._preload_pop_tts())
-        self.loop_watchdog_task = asyncio.create_task(self._watch_event_loop())
+         self.loop_watchdog_task = asyncio.create_task(self._watch_event_loop())
         self.voice_watchdog_task = asyncio.create_task(self._watch_voice_connection())
         self.discord_task = asyncio.create_task(self._start_discord())
         self.discord_task.add_done_callback(self._discord_finished)
@@ -323,23 +320,6 @@ class VoiceService:
             self.log(f"Не удалось заранее загрузить армянский голос: {self.armenian_error}")
         finally:
             self.armenian_ready.set()
-
-    async def _preload_pop_tts(self):
-        """Load and warm the bear voice before the first user message."""
-        try:
-            # Wait for Pocket TTS to finish its CPU-heavy initialization first.
-            await self.armenian_ready.wait()
-            started = time.perf_counter()
-            await asyncio.to_thread(self.pop_tts.warmup)
-            elapsed = (time.perf_counter() - started) * 1000
-            self.log(f"Медвежий голос заранее загружен и прогрет за {elapsed:.0f} мс.")
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            self.pop_error = f"{type(exc).__name__}: {exc}"
-            self.log(f"Не удалось заранее загрузить медвежий голос: {self.pop_error}")
-        finally:
-            self.pop_ready.set()
 
     async def _watch_event_loop(self):
         # Discord heartbeat warnings mean the asyncio loop was not scheduled.
@@ -558,15 +538,7 @@ class VoiceService:
                             f'ошибка загрузки Pocket TTS: {self.armenian_error}'
                         )
                         continue
-                elif engine == "teratts":
-                    await self.pop_ready.wait()
-                    if self.pop_error:
-                        self.log(
-                            f'Голос «{profile["label"]}» недоступен: '
-                            f'ошибка загрузки TeraTTS: {self.pop_error}'
-                        )
-                        continue
-                self.log(
+                 self.log(
                     f'Локальная озвучка: {profile["label"]}; '
                     f'движок={engine}; диктор={profile.get("speaker", selected_voice)}.'
                 )
@@ -763,8 +735,7 @@ class VoiceService:
             self.start_watchdog,
             self.tts_load_task,
             self.armenian_load_task,
-            self.pop_load_task,
-            self.loop_watchdog_task,
+             self.loop_watchdog_task,
             self.voice_watchdog_task,
         ):
             if task and not task.done():
