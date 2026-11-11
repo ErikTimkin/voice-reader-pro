@@ -13,8 +13,9 @@ def main() -> None:
         raise AssertionError(f"Expected five browser voice presets: {list(VOICE_PRESETS)}")
     for voice in VOICE_PRESETS:
         assert normalize_voice_key(voice) == voice
-    assert VOICE_PRESETS["jelly_bear"]["speaker"] == "xenia"
-    assert "asetrate=57120" in VOICE_PRESETS["jelly_bear"]["ffmpeg_options"]
+    assert VOICE_PRESETS["jelly_bear"]["speaker"] == "aidar"
+    assert "asetrate=42240" in VOICE_PRESETS["jelly_bear"]["ffmpeg_options"]
+    assert "bass=g=5:f=150" in VOICE_PRESETS["jelly_bear"]["ffmpeg_options"]
     assert normalize_voice_key("pop") == "cute_girl"
     assert normalize_voice_key("pudge") == "normal"
     assert VOICE_PRESETS["armenian"]["engine"] == "armenian"
