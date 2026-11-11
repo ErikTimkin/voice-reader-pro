@@ -177,6 +177,7 @@ class App:
 
         log_body = ttk.Frame(log_card, style='Card.TFrame')
         log_body.pack(fill='both', expand=True)
+        self.log_body = log_body
         # The Text widget must be created with log_body as its actual Tk parent.
         # Packing a child of log_card into its own descendant raises TclError.
         self.log = tk.Text(
@@ -602,7 +603,24 @@ def run_frozen_voice_smoke_test(preset: str) -> int:
         gc.collect()
 
 
+def run_frozen_ui_smoke_test() -> int:
+    """Create the real desktop widgets in the frozen EXE without starting services."""
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = App(root)
+        root.update_idletasks()
+        if not app.log.winfo_exists() or app.log.master is not app.log_body:
+            raise RuntimeError("Журнал не создан внутри своего контейнера.")
+        root.update()
+        return 0
+    finally:
+        root.destroy()
+
+
 if __name__ == '__main__':
     if len(sys.argv) >= 3 and sys.argv[1] == '--voice-smoke-test':
         raise SystemExit(run_frozen_voice_smoke_test(sys.argv[2]))
+    if len(sys.argv) >= 2 and sys.argv[1] == '--ui-smoke-test':
+        raise SystemExit(run_frozen_ui_smoke_test())
     App(tk.Tk()).root.mainloop()

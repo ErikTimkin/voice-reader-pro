@@ -86,6 +86,12 @@ jobs:
         run: python tests/voice_pipeline_smoke.py
       - name: Build EXE
         run: pyinstaller --noconfirm --clean build.spec
+      - name: Smoke-test desktop UI and log widget
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD 'dist/VoiceReaderPro/VoiceReaderPro.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--ui-smoke-test') -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) { throw "Desktop UI smoke test failed with exit code $($process.ExitCode)" }
       - name: Prepare offline voice folder
         shell: pwsh
         run: |
