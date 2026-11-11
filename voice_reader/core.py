@@ -538,7 +538,7 @@ class VoiceService:
                             f'ошибка загрузки Pocket TTS: {self.armenian_error}'
                         )
                         continue
-                 self.log(
+                self.log(
                     f'Локальная озвучка: {profile["label"]}; '
                     f'движок={engine}; диктор={profile.get("speaker", selected_voice)}.'
                 )
