@@ -292,55 +292,100 @@ class ArmenianAccentTTS:
         return _write_audio_wav(audio, self.model.sample_rate, target_path)
 
     def stream_to_source(self, text: str, source) -> None:
-        """Generate Pocket TTS chunks, normalize the complete waveform, then queue PCM."""
+        """Prefill briefly, then normalize and forward Pocket TTS chunks as they arrive."""
         self.load()
         prepared_text = normalize_russian_for_pocket_tts(text)
         if not prepared_text:
             raise RuntimeError("Для армянского голоса передан пустой текст.")
+
         import time
         started = time.perf_counter()
         first_chunk_ms = None
-        chunks = []
+        first_audio_ms = None
         sample_count = 0
-        with self._synthesis_lock:
-            for chunk in self.model.generate_audio_stream(
-                self.voice_state,
-                prepared_text,
-                copy_state=True,
-                stop=source.stop_event,
-            ):
-                if source.stop_event.is_set():
-                    break
-                if hasattr(chunk, "detach"):
-                    samples = chunk.detach().to("cpu").numpy()
-                else:
-                    samples = np.asarray(chunk)
-                samples = np.asarray(samples, dtype=np.float32).reshape(-1)
-                if samples.size == 0:
-                    continue
-                if first_chunk_ms is None:
-                    first_chunk_ms = (time.perf_counter() - started) * 1000
-                chunks.append(samples.copy())
-                sample_count += int(samples.size)
+        chunk_count = 0
+        raw_peak = 0.0
+        normalized_peak = 0.0
+        gain = None
+        prefill = []
+        prefill_samples = 0
+        # Only hold about 160 ms to estimate a safe, stable gain. The old path
+        # buffered the entire utterance before Discord received its first frame.
+        prefill_target = max(1, int(self.model.sample_rate * 0.16))
+
+        def send_normalized(samples: np.ndarray) -> None:
+            nonlocal gain, raw_peak, normalized_peak, first_audio_ms
+            chunk_peak = float(np.max(np.abs(samples))) if samples.size else 0.0
+            raw_peak = max(raw_peak, chunk_peak)
+            if gain is None:
+                if chunk_peak < 1e-5:
+                    raise RuntimeError("Pocket TTS вернула практически бесшумный армянский звук.")
+                gain = 0.85 / chunk_peak
+            elif chunk_peak * gain > 0.95:
+                # Fast-attack peak protection for louder later chunks.
+                gain = 0.95 / chunk_peak
+            normalized = np.clip(samples * gain, -0.95, 0.95).astype(np.float32)
+            if normalized.size:
+                normalized_peak = max(normalized_peak, float(np.max(np.abs(normalized))))
+                source.push_mono_24k(normalized)
+                if first_audio_ms is None:
+                    first_audio_ms = (time.perf_counter() - started) * 1000
+
+        try:
+            with self._synthesis_lock:
+                for chunk in self.model.generate_audio_stream(
+                    self.voice_state,
+                    prepared_text,
+                    copy_state=True,
+                    stop=source.stop_event,
+                ):
+                    if source.stop_event.is_set():
+                        break
+                    if hasattr(chunk, "detach"):
+                        samples = chunk.detach().to("cpu").numpy()
+                    else:
+                        samples = np.asarray(chunk)
+                    samples = np.asarray(samples, dtype=np.float32).reshape(-1)
+                    if samples.size == 0:
+                        continue
+                    if first_chunk_ms is None:
+                        first_chunk_ms = (time.perf_counter() - started) * 1000
+                    chunk_count += 1
+                    sample_count += int(samples.size)
+
+                    if gain is None:
+                        prefill.append(samples.copy())
+                        prefill_samples += int(samples.size)
+                        if prefill_samples >= prefill_target:
+                            initial = np.concatenate(prefill)
+                            send_normalized(initial)
+                            prefill.clear()
+                    else:
+                        send_normalized(samples)
+
+                # Short utterances may finish before the prefill threshold.
+                if prefill and not source.stop_event.is_set():
+                    send_normalized(np.concatenate(prefill))
+                    prefill.clear()
+        except Exception as exc:
+            source.finish(exc)
+            raise
 
         elapsed = time.perf_counter() - started
         audio_seconds = sample_count / float(self.model.sample_rate)
-        if not chunks:
-            source.finish(RuntimeError("Pocket TTS не выдал аудиочанков."))
-            self.log(f"Армянский синтез: модель не выдала чанков; время={elapsed:.2f} сек.")
-            return
         if source.stop_event.is_set():
             source.finish()
             return
+        if chunk_count == 0:
+            source.finish(RuntimeError("Pocket TTS не выдал аудиочанков."))
+            self.log(f"Армянский синтез: модель не выдала чанков; время={elapsed:.2f} сек.")
+            return
 
-        waveform = np.concatenate(chunks)
-        normalized, raw_peak, normalized_peak = _normalize_tts_samples(waveform)
-        # Pocket TTS emits 24 kHz mono. Discord PCM expects 48 kHz stereo.
-        source.push_mono_24k(normalized)
         rtf = (elapsed / audio_seconds) if audio_seconds > 0 else float("inf")
         self.log(
             f"Армянский синтез: первый чанк={first_chunk_ms:.0f} мс; "
-            f"чанков={len(chunks)}; длительность={audio_seconds:.2f} сек; "
+            f"первый звук отправлен={first_audio_ms:.0f} мс; "
+            f"чанков={chunk_count}; длительность={audio_seconds:.2f} сек; "
             f"генерация={elapsed:.2f} сек; RTF={rtf:.2f}; "
             f"peak до нормализации={raw_peak:.6f}; после={normalized_peak:.3f}."
         )
