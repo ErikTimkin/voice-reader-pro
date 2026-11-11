@@ -38,6 +38,28 @@ def main() -> None:
     # Verify that a long utterance begins feeding Discord before Pocket TTS
     # finishes generating the complete message (the old implementation buffered
     # every chunk and only sent audio after the generator returned).
+    # Several short model chunks must form one continuous PCM stream.
+    chunked_source = StreamingPCMSource(lambda _message: None)
+    chunk_parts = [
+        np.sin(np.linspace(i, i + 4, 480, dtype=np.float32)) * 0.2
+        for i in range(4)
+    ]
+    for part in chunk_parts:
+        chunked_source.push_mono_24k(part)
+    chunked_source.finish()
+    chunked_frames = []
+    while True:
+        frame = chunked_source.read()
+        if not frame:
+            break
+        if len(frame) != StreamingPCMSource.FRAME_BYTES:
+            raise AssertionError("Chunked Armenian audio produced a partial Discord frame")
+        chunked_frames.append(frame)
+    if len(chunked_frames) != 4:
+        raise AssertionError(
+            f"Chunk boundaries inserted gaps or extra frames: got {len(chunked_frames)}"
+        )
+
     class TrackingSource:
         def __init__(self, model):
             import threading
