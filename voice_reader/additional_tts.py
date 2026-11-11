@@ -15,25 +15,26 @@ import numpy as np
 import yaml
 
 
-def _write_audio_wav(audio, sample_rate: int, target_path: str | Path) -> tuple[int, float]:
-    target_path = Path(target_path)
+def _normalize_tts_samples(audio) -> tuple[np.ndarray, float, float]:
+    """Validate a TTS waveform and normalize quiet model output with headroom."""
     if hasattr(audio, "detach"):
         samples = audio.detach().to("cpu").numpy()
     else:
         samples = np.asarray(audio)
     samples = np.asarray(samples, dtype=np.float32).reshape(-1)
-
     if samples.size == 0 or not np.isfinite(samples).all():
         raise RuntimeError("Дополнительная модель вернула пустой или некорректный звук.")
     peak = float(np.max(np.abs(samples)))
     if peak < 1e-5:
         raise RuntimeError("Дополнительная модель вернула тишину.")
+    normalized = np.clip(samples * (0.85 / peak), -0.95, 0.95).astype(np.float32)
+    return normalized, peak, float(np.max(np.abs(normalized)))
 
-    # TTS checkpoints can return valid but extremely quiet waveforms. Normalize
-    # peak level before converting to int16 so the Armenian and pop voices are
-    # audible through Discord's Opus pipeline. Keep headroom to avoid clipping.
-    samples = samples * (0.85 / peak)
-    pcm = (np.clip(samples, -1.0, 1.0) * 32767.0).astype(np.int16)
+
+def _write_audio_wav(audio, sample_rate: int, target_path: str | Path) -> tuple[int, float]:
+    target_path = Path(target_path)
+    samples, _raw_peak, _normalized_peak = _normalize_tts_samples(audio)
+    pcm = (samples * 32767.0).astype(np.int16)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     with wave.open(str(target_path), "wb") as output:
         output.setnchannels(1)
@@ -205,11 +206,6 @@ class ArmenianAccentTTS:
                     "Для армянского голоса не установлены компоненты Pocket TTS."
                 ) from exc
 
-            # The build-time YAML must never dictate paths on the user's PC.
-            # CI used to write absolute D:\\a\\... paths into this file. Those
-            # paths exist on the GitHub runner, not on another Windows machine.
-            # Resolve the two model assets from this installation's voices folder
-            # and pass Pocket TTS a temporary portable config.
             config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
             config["weights_path"] = str(weights_path.resolve())
             config.pop("weights_path_without_voice_cloning", None)
@@ -234,14 +230,10 @@ class ArmenianAccentTTS:
                     )
                     runtime_config_path = Path(runtime_config.name)
 
-                # Pocket TTS is CPU-bound; allow up to six threads on modern
-                # desktop CPUs while keeping enough headroom for Discord.
-                # Leave CPU headroom for Discord's asyncio gateway and voice heartbeats.
                 torch.set_num_threads(max(1, min(4, (os.cpu_count() or 4) - 1)))
                 try:
                     torch.set_num_interop_threads(1)
                 except RuntimeError:
-                    # PyTorch only allows this before its inter-op pool is initialized.
                     pass
                 self.log("Загружаю многоязычную модель Pocket TTS (армянский + русский)…")
                 model = TTSModel.load_model(config=str(runtime_config_path))
@@ -262,16 +254,9 @@ class ArmenianAccentTTS:
                 except Exception as exc:
                     self.log(f"Не удалось сохранить кэш тембра (продолжаю без него): {exc}")
 
-            # The input is Russian. Core normalizes Russian numbers before TTS.
-            # Do not load the Armenian-only hy_text.py: it is for Armenian-script
-            # text and is not part of the Russian cross-lingual inference path.
             self.model = model
             self.voice_state = voice_state
 
-            # Loading weights and the speaker prompt does not initialize every
-            # inference/decoder path. Run a tiny throwaway stream now, while the
-            # app is starting, so the first real Discord request does not pay
-            # the one-time CPU/kernel/cache setup cost.
             warmup_started = __import__("time").perf_counter()
             warmup_samples = 0
             for warmup_chunk in self.model.generate_audio_stream(
@@ -307,7 +292,7 @@ class ArmenianAccentTTS:
         return _write_audio_wav(audio, self.model.sample_rate, target_path)
 
     def stream_to_source(self, text: str, source) -> None:
-        """Generate Armenian speech incrementally into a Discord PCM source."""
+        """Generate Pocket TTS chunks, normalize the complete waveform, then queue PCM."""
         self.load()
         prepared_text = normalize_russian_for_pocket_tts(text)
         if not prepared_text:
@@ -315,9 +300,8 @@ class ArmenianAccentTTS:
         import time
         started = time.perf_counter()
         first_chunk_ms = None
-        chunks = 0
+        chunks = []
         sample_count = 0
-        peak = 0.0
         with self._synthesis_lock:
             for chunk in self.model.generate_audio_stream(
                 self.voice_state,
@@ -336,25 +320,30 @@ class ArmenianAccentTTS:
                     continue
                 if first_chunk_ms is None:
                     first_chunk_ms = (time.perf_counter() - started) * 1000
-                chunks += 1
+                chunks.append(samples.copy())
                 sample_count += int(samples.size)
-                peak = max(peak, float(np.max(np.abs(samples))))
-                # Pocket TTS emits 24 kHz mono. Discord PCM expects 48 kHz,
-                # 16-bit stereo, in exact 20 ms frames (3,840 bytes).
-                source.push_mono_24k(samples)
+
         elapsed = time.perf_counter() - started
         audio_seconds = sample_count / float(self.model.sample_rate)
+        if not chunks:
+            source.finish(RuntimeError("Pocket TTS не выдал аудиочанков."))
+            self.log(f"Армянский синтез: модель не выдала чанков; время={elapsed:.2f} сек.")
+            return
+        if source.stop_event.is_set():
+            source.finish()
+            return
+
+        waveform = np.concatenate(chunks)
+        normalized, raw_peak, normalized_peak = _normalize_tts_samples(waveform)
+        # Pocket TTS emits 24 kHz mono. Discord PCM expects 48 kHz stereo.
+        source.push_mono_24k(normalized)
         rtf = (elapsed / audio_seconds) if audio_seconds > 0 else float("inf")
         self.log(
             f"Армянский синтез: первый чанк={first_chunk_ms:.0f} мс; "
-            f"чанков={chunks}; длительность={audio_seconds:.2f} сек; "
-            f"генерация={elapsed:.2f} сек; RTF={rtf:.2f}; peak={peak:.4f}."
-            if first_chunk_ms is not None else
-            f"Армянский синтез: модель не выдала чанков; время={elapsed:.2f} сек."
+            f"чанков={len(chunks)}; длительность={audio_seconds:.2f} сек; "
+            f"генерация={elapsed:.2f} сек; RTF={rtf:.2f}; "
+            f"peak до нормализации={raw_peak:.6f}; после={normalized_peak:.3f}."
         )
-        if sample_count and peak < 1e-5:
-            source.finish(RuntimeError("Pocket TTS вернул цифровую тишину."))
-            return
         source.finish()
 
     def unload(self) -> None:
