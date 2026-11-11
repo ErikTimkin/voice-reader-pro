@@ -350,32 +350,47 @@ class VoiceService:
                 self.log(f'Не удалось автоматически восстановить голосовое соединение: {type(exc).__name__}: {exc}')
 
     async def _start_discord(self):
-        try:
-            timeout = aiohttp.ClientTimeout(total=15)
-            headers = {'Authorization': f'Bot {self.token}'}
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get('https://discord.com/api/v10/users/@me', headers=headers) as response:
-                    if response.status == 401:
-                        self.log('Discord отклонил токен (401). Проверьте Bot Token в Developer Portal → Bot.')
-                        return
-                    if response.status == 403:
-                        self.log('Discord запретил доступ к API (403). Проверьте сеть/VPN.')
-                        return
-                    if response.status != 200:
-                        body = (await response.text())[:200]
-                        self.log(f'Discord API вернул {response.status}: {body}')
-                        return
-                    bot_info = await response.json()
-                    self.log(f'Токен принят. Бот: {bot_info.get("username", "без имени")}. Запускаем gateway…')
-            await self.client.start(self.token)
-        except asyncio.TimeoutError:
-            self.log('Тайм-аут при обращении к Discord. Проверьте VPN, прокси или брандмауэр.')
-        except aiohttp.ClientError as exc:
-            self.log(f'Сетевая ошибка Discord: {type(exc).__name__}: {exc}')
-        except discord.LoginFailure:
-            self.log('Discord отклонил токен бота. Создайте новый Bot Token и вставьте его в программу.')
-        except Exception as exc:
-            self.log(f'Ошибка запуска Discord: {type(exc).__name__}: {exc}')
+        """Keep retrying transient Discord/API failures until the app is stopped."""
+        retry_delay = 2
+        while not self.client.is_closed():
+            try:
+                timeout = aiohttp.ClientTimeout(total=20)
+                headers = {'Authorization': f'Bot {self.token}'}
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.get('https://discord.com/api/v10/users/@me', headers=headers) as response:
+                        if response.status == 401:
+                            self.log('Discord отклонил токен (401). Проверьте Bot Token в Developer Portal → Bot.')
+                            return
+                        if response.status != 200:
+                            body = (await response.text())[:200]
+                            raise RuntimeError(f'Discord API вернул {response.status}: {body}')
+                        bot_info = await response.json()
+                        self.log(f'Токен принят. Бот: {bot_info.get("username", "без имени")}. Запускаем gateway…')
+
+                # discord.py handles ordinary gateway reconnects internally.
+                # This outer loop also recovers when startup/connect raises and
+                # returns control to this task instead of reconnecting itself.
+                await self.client.start(self.token, reconnect=True)
+                if self.client.is_closed():
+                    break
+                self.log('Клиент Discord неожиданно завершил работу. Повторяю запуск…')
+            except asyncio.CancelledError:
+                raise
+            except discord.LoginFailure:
+                self.log('Discord отклонил токен бота. Создайте новый Bot Token и вставьте его в программу.')
+                return
+            except asyncio.TimeoutError:
+                self.log('Тайм-аут при обращении к Discord. Повтор подключения через несколько секунд…')
+            except aiohttp.ClientError as exc:
+                self.log(f'Сетевая ошибка Discord: {type(exc).__name__}: {exc}. Повтор подключения…')
+            except Exception as exc:
+                self.log(f'Соединение Discord завершилось с ошибкой: {type(exc).__name__}: {exc}. Повтор подключения…')
+
+            if not self.client.is_closed():
+                self.ready.clear()
+                self.log(f'Повторный запуск Discord через {retry_delay} сек…')
+                await asyncio.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, 60)
 
     async def _check_discord_startup(self):
         try:
