@@ -35,6 +35,7 @@ class App:
         self.events = queue.Queue()
         self.stop_requested = threading.Event()
         self.thread = self.loop = self.service = None
+        self.keep_awake = False
         DATA.mkdir(parents=True, exist_ok=True)
         cfg = self.load()
 
@@ -312,6 +313,7 @@ class App:
         except Exception as e:
             return messagebox.showerror(APP_NAME, f'Не удалось безопасно сохранить токен: {e}')
         self.stop_requested.clear()
+        self._set_system_awake(True)
         for key in self.service_states:
             self.service_states[key].set('Запуск…')
         self.link.delete(0, 'end')
@@ -435,8 +437,28 @@ class App:
                 last_state = value
             await asyncio.sleep(1)
 
+    def _set_system_awake(self, enabled: bool) -> None:
+        """Prevent Windows system sleep while the voice service is running; allow display sleep."""
+        if os.name != 'nt':
+            return
+        try:
+            import ctypes
+            ES_CONTINUOUS = 0x80000000
+            ES_SYSTEM_REQUIRED = 0x00000001
+            flags = ES_CONTINUOUS | ES_SYSTEM_REQUIRED if enabled else ES_CONTINUOUS
+            ctypes.windll.kernel32.SetThreadExecutionState(flags)
+            self.keep_awake = enabled
+            self.emit(
+                'Windows: сон системы отключён, пока работает озвучка.' if enabled
+                else 'Windows: обычный режим энергосбережения восстановлен.'
+            )
+        except Exception as exc:
+            self.emit(f'Не удалось изменить режим сна Windows: {type(exc).__name__}: {exc}')
+
     def stop_service(self):
         self.stop_requested.set()
+        if self.keep_awake:
+            self._set_system_awake(False)
         if self.service and self.service.tunnel and self.service.tunnel.returncode is None:
             self.service.tunnel.terminate()
         self.status.set('Остановлено')

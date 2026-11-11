@@ -9,8 +9,8 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 FFMPEG = ROOT / "tools" / "ffmpeg.exe"
-PITCH_FILTER = "asetrate=57120,aresample=48000"
-FULL_FILTER = f"{PITCH_FILTER},atempo=0.84,volume=1.15"
+PITCH_FILTER = "asetrate=42240,aresample=48000"
+FULL_FILTER = f"{PITCH_FILTER},atempo=1.136,bass=g=5:f=150,lowpass=f=5200,acompressor=threshold=0.12:ratio=2.2:attack=8:release=90,volume=1.2"
 
 
 def render(ffmpeg: Path, source: str, filters: str, output: Path) -> None:
@@ -62,7 +62,7 @@ def main() -> None:
                 f"Unexpected pitch-stage format/duration: {pitch_rate} Hz, {pitch_duration:.3f}s"
             )
         measured = dominant_frequency(pitch_samples, pitch_rate)
-        expected = 440.0 * 57120.0 / 48000.0
+        expected = 440.0 * 42240.0 / 48000.0
         if abs(measured - expected) > 5.0:
             raise AssertionError(
                 f"Pitch stage should raise 440 Hz to about {expected:.1f} Hz: got {measured:.1f} Hz"
@@ -72,7 +72,7 @@ def main() -> None:
         # valid, audible 48 kHz PCM with the expected near-original duration.
         render(FFMPEG, "sine=frequency=440:sample_rate=48000:duration=1", FULL_FILTER, full_output)
         full_rate, full_samples, full_duration = read_wav(full_output)
-        if full_rate != 48000 or not 0.88 <= full_duration <= 1.05:
+        if full_rate != 48000 or not 0.95 <= full_duration <= 1.05:
             raise AssertionError(
                 f"Unexpected full-filter format/duration: {full_rate} Hz, {full_duration:.3f}s"
             )

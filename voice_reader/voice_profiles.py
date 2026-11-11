@@ -23,9 +23,10 @@ VOICE_PRESETS = {
     "jelly_bear": {
         "label": "Желейный медведь",
         "engine": "silero",
-        "speaker": "xenia",
-        # Bright, high-pitched cartoon tone without cloning a real performer.
-        "ffmpeg_options": "-af asetrate=57120,aresample=48000,atempo=0.84,volume=1.15",
+        "speaker": "aidar",
+        # Lower, rounder cartoon-bear timbre: shift pitch down 12%, restore
+        # duration, add controlled low-mid body and tame sharp high frequencies.
+        "ffmpeg_options": "-af asetrate=42240,aresample=48000,atempo=1.136,bass=g=5:f=150,lowpass=f=5200,acompressor=threshold=0.12:ratio=2.2:attack=8:release=90,volume=1.2",
     },
     "armenian": {
         "label": "Армянский акцент",
