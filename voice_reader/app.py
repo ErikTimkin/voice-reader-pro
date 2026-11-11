@@ -175,8 +175,12 @@ class App:
         ttk.Button(log_header, text='Очистить', style='Copy.TButton', command=self.clear_log).pack(side='right', padx=(0, 8))
         ttk.Button(log_header, text='Копировать журнал', style='Copy.TButton', command=self.copy_log).pack(side='right', padx=(0, 8))
 
+        log_body = ttk.Frame(log_card, style='Card.TFrame')
+        log_body.pack(fill='both', expand=True)
+        # The Text widget must be created with log_body as its actual Tk parent.
+        # Packing a child of log_card into its own descendant raises TclError.
         self.log = tk.Text(
-            log_card,
+            log_body,
             height=12,
             state='normal',
             bg='#080e19',
@@ -191,9 +195,7 @@ class App:
             wrap='word',
             font=('Consolas', 9),
         )
-        log_body = ttk.Frame(log_card, style='Card.TFrame')
-        log_body.pack(fill='both', expand=True)
-        self.log.pack(in_=log_body, side='left', fill='both', expand=True)
+        self.log.pack(side='left', fill='both', expand=True)
         log_scroll = ttk.Scrollbar(log_body, orient='vertical', command=self.log.yview)
         log_scroll.pack(side='right', fill='y')
         self.log.configure(yscrollcommand=log_scroll.set)
@@ -257,6 +259,8 @@ class App:
                         self.service_states[key].set(value)
                 elif typ == 'error':
                     self.status.set('Ошибка')
+                    self.log.insert('end', f'ОШИБКА ЗАПУСКА: {msg}\\n')
+                    self.log.see('end')
                     messagebox.showerror(APP_NAME, msg)
                     self.start.configure(state='normal')
                     self.stop.configure(state='disabled')
@@ -321,9 +325,19 @@ class App:
         self.thread.start()
 
     def run(self, *args):
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
-        self.loop.run_until_complete(self.run_async(*args))
+        try:
+            self.loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(self.loop)
+            self.loop.run_until_complete(self.run_async(*args))
+        except Exception as exc:
+            self.events.put((
+                'error',
+                f'{type(exc).__name__}: {exc}',
+            ))
+        finally:
+            if self.loop is not None and not self.loop.is_closed():
+                self.loop.close()
+            self.loop = None
 
     async def run_async(self, token, guild, channel, voice, ffmpeg, cloudflared):
         try:
