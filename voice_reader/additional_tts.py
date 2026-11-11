@@ -11,7 +11,12 @@ from threading import Lock
 import numpy as np
 
 
-def _write_audio_wav(audio, sample_rate: int, target_path: str | Path) -> tuple[int, float]:
+def _write_audio_wav(
+    audio,
+    sample_rate: int,
+    target_path: str | Path,
+    logger=None,
+) -> tuple[int, float]:
     target_path = Path(target_path)
     if hasattr(audio, "detach"):
         samples = audio.detach().to("cpu").numpy()
@@ -21,9 +26,38 @@ def _write_audio_wav(audio, sample_rate: int, target_path: str | Path) -> tuple[
 
     if samples.size == 0 or not np.isfinite(samples).all():
         raise RuntimeError("Дополнительная модель вернула пустой или некорректный звук.")
-    peak = float(np.max(np.abs(samples)))
-    if peak < 1e-5:
-        raise RuntimeError("Дополнительная модель вернула тишину.")
+
+    peak_before = float(np.max(np.abs(samples)))
+    rms_before = float(np.sqrt(np.mean(np.square(samples, dtype=np.float64))))
+    if peak_before < 1e-5 or rms_before < 1e-6:
+        raise RuntimeError(
+            f"Дополнительная модель вернула практически тишину "
+            f"(peak={peak_before:.6f}, RMS={rms_before:.6f})."
+        )
+
+    # Some cross-lingual reference styles return valid speech at a much lower
+    # amplitude than Silero. Normalize only this additional-TTS path; the
+    # default and bear voices use LocalSileroTTS and are not affected.
+    target_peak = 0.28
+    max_gain = 128.0
+    gain = min(target_peak / peak_before, max_gain)
+    samples = samples * np.float32(gain)
+    peak_after = float(np.max(np.abs(samples)))
+    rms_after = float(np.sqrt(np.mean(np.square(samples, dtype=np.float64))))
+
+    if peak_after < 0.02 or rms_after < 0.001:
+        raise RuntimeError(
+            "Дополнительная модель выдала слишком слабый сигнал даже после "
+            f"нормализации (peak={peak_after:.4f}, RMS={rms_after:.4f}, "
+            f"усиление={gain:.1f}x). Сообщение не будет отправлено как будто звук исправен."
+        )
+
+    if logger:
+        logger(
+            "Уровень дополнительного голоса: "
+            f"до peak={peak_before:.6f}/RMS={rms_before:.6f}; "
+            f"усиление={gain:.1f}x; после peak={peak_after:.3f}/RMS={rms_after:.3f}."
+        )
 
     pcm = (np.clip(samples, -1.0, 1.0) * 32767.0).astype(np.int16)
     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -102,7 +136,7 @@ class TeraTTS:
                 duration_scale=duration_scale,
                 guidance=3.0,
             )
-        return _write_audio_wav(audio, self.SAMPLE_RATE, target_path)
+        return _write_audio_wav(audio, self.SAMPLE_RATE, target_path, logger=self.log)
 
     def unload(self) -> None:
         if self.model is not None:
