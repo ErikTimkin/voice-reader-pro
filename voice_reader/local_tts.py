@@ -44,13 +44,18 @@ class LocalSileroTTS:
             model.to(torch.device("cpu"))
             self.model = model
 
-            # Warm up the model before accepting voice requests.
+            # Warm up every speaker used by the UI before accepting requests.
+            # The first Xenia request otherwise pays speaker-specific setup time.
             with torch.inference_mode():
-                model.apply_tts(
-                    text="Проверка локального голоса.",
-                    speaker="aidar",
-                    sample_rate=SAMPLE_RATE,
-                )
+                for speaker in ("aidar", "baya", "xenia"):
+                    warmup_audio = model.apply_tts(
+                        text="Проверка локального голоса.",
+                        speaker=speaker,
+                        sample_rate=SAMPLE_RATE,
+                    )
+                    if warmup_audio is None or len(warmup_audio) == 0:
+                        raise RuntimeError(f"Silero не прогрела голос {speaker}.")
+                    self.log(f"Голос Silero {speaker} прогрет.")
 
     def synthesize_to_wav(self, text: str, speaker: str, target_path: str | Path) -> tuple[int, float]:
         if self.model is None:
