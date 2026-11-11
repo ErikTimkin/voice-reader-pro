@@ -57,7 +57,7 @@ def main() -> None:
         # produce misleading spectral peaks even when speech sounds correct.
         render(FFMPEG, "sine=frequency=440:sample_rate=48000:duration=1", PITCH_FILTER, pitch_output)
         pitch_rate, pitch_samples, pitch_duration = read_wav(pitch_output)
-        if pitch_rate != 48000 or not 0.75 <= pitch_duration <= 0.9:
+        if pitch_rate != 48000 or not 0.85 <= pitch_duration <= 0.95:
             raise AssertionError(
                 f"Unexpected pitch-stage format/duration: {pitch_rate} Hz, {pitch_duration:.3f}s"
             )
@@ -65,7 +65,7 @@ def main() -> None:
         expected = 440.0 * 42240.0 / 48000.0
         if abs(measured - expected) > 5.0:
             raise AssertionError(
-                f"Pitch stage should raise 440 Hz to about {expected:.1f} Hz: got {measured:.1f} Hz"
+                f"Pitch stage should lower 440 Hz to about {expected:.1f} Hz: got {measured:.1f} Hz"
             )
 
         # Exercise the exact complete production filter and ensure it returns
