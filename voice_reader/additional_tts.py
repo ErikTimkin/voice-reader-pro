@@ -102,6 +102,22 @@ class TeraPopTTS:
             self.model = loaded
             self.log(f"TeraTTSv2 готова: CPUExecutionProvider, потоков={threads}, голос=ru_m5.")
 
+    def warmup(self) -> None:
+        """Prime ONNX sessions and the Russian text/audio path before first use."""
+        self.load()
+        with self._synthesis_lock:
+            audio = self.module.generate_speech(
+                self.model,
+                "<ru>Привет.</ru>",
+                "ru_m5",
+                duration_scale=0.94,
+                guidance=3.0,
+            )
+        samples = np.asarray(audio, dtype=np.float32).reshape(-1)
+        if samples.size < int(self.SAMPLE_RATE * 0.1):
+            raise RuntimeError("TeraTTS не прошла прогрев: слишком короткий тестовый звук.")
+        self.log("Модель медвежьего голоса прогрета: первый запрос не будет запускать ONNX с нуля.")
+
     def synthesize_to_wav(self, text: str, target_path: str | Path) -> tuple[int, float]:
         self.load()
         with self._synthesis_lock:
