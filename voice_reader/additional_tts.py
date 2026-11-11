@@ -221,7 +221,7 @@ class ArmenianAccentTTS:
                 # Pocket TTS is CPU-bound; allow up to six threads on modern
                 # desktop CPUs while keeping enough headroom for Discord.
                 # Leave CPU headroom for Discord's asyncio gateway and voice heartbeats.
-                torch.set_num_threads(max(1, min(2, os.cpu_count() or 2)))
+                torch.set_num_threads(max(1, min(4, (os.cpu_count() or 4) - 1)))
                 try:
                     torch.set_num_interop_threads(1)
                 except RuntimeError:
