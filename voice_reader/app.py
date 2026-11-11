@@ -260,7 +260,7 @@ class App:
                         self.service_states[key].set(value)
                 elif typ == 'error':
                     self.status.set('Ошибка')
-                    self.log.insert('end', f'ОШИБКА ЗАПУСКА: {msg}\\n')
+                    self.log.insert('end', f'ОШИБКА ЗАПУСКА: {msg}\n')
                     self.log.see('end')
                     messagebox.showerror(APP_NAME, msg)
                     self.start.configure(state='normal')

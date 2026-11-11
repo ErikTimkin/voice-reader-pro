@@ -54,7 +54,7 @@ def main() -> None:
         raise AssertionError("Desktop startup must use the browser-selected voice only")
     if "args=(token, guild, channel, 'normal', ffmpeg, cloudflared)" not in app:
         raise AssertionError("Desktop service must start with a valid default voice argument")
-    if "self.log = tk.Text(\\n            log_body," not in app:
+    if "self.log = tk.Text(\n            log_body," not in app:
         raise AssertionError("Log Text widget must be created inside its actual parent frame")
     if "self.log.pack(in_=log_body" in app:
         raise AssertionError("Log Text widget must not be packed into a descendant frame")
