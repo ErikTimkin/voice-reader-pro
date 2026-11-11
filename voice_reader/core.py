@@ -89,28 +89,21 @@ class StreamingPCMSource(discord.AudioSource):
         self._error = None
         self._bytes = 0
         self._frames_read = 0
+        # Preserve resampler state and partial Discord frames across TTS chunks.
+        self._previous_sample = None
+        self._pending_pcm = bytearray()
 
-    def push_mono_24k(self, samples):
+    def _queue_pcm(self, pcm_mono):
         import numpy as np
-        if self.stop_event.is_set():
+        if pcm_mono.size == 0 or self.stop_event.is_set():
             return
-        samples = np.asarray(samples, dtype=np.float32).reshape(-1)
-        if samples.size < 2:
-            return
-        # Linear 2x resampling is sufficient for voice-band PCM and avoids
-        # adding a heavy audio dependency to the offline Windows package.
-        source_x = np.arange(samples.size, dtype=np.float32)
-        target_x = np.arange(samples.size * 2, dtype=np.float32) * 0.5
-        upsampled = np.interp(target_x, source_x, samples).astype(np.float32)
-        pcm_mono = (np.clip(upsampled, -1.0, 1.0) * 32767.0).astype(np.int16)
         stereo = np.repeat(pcm_mono, 2)
-        payload = stereo.tobytes()
-        for offset in range(0, len(payload), self.FRAME_BYTES):
+        self._pending_pcm.extend(stereo.tobytes())
+        while len(self._pending_pcm) >= self.FRAME_BYTES:
             if self.stop_event.is_set():
                 return
-            frame = payload[offset:offset + self.FRAME_BYTES]
-            if len(frame) < self.FRAME_BYTES:
-                frame += bytes(self.FRAME_BYTES - len(frame))
+            frame = bytes(self._pending_pcm[:self.FRAME_BYTES])
+            del self._pending_pcm[:self.FRAME_BYTES]
             while not self.stop_event.is_set():
                 try:
                     self._frames.put(frame, timeout=0.1)
@@ -118,6 +111,36 @@ class StreamingPCMSource(discord.AudioSource):
                     break
                 except queue.Full:
                     continue
+
+    def push_mono_24k(self, samples):
+        import numpy as np
+        if self.stop_event.is_set():
+            return
+        samples = np.asarray(samples, dtype=np.float32).reshape(-1)
+        if samples.size == 0:
+            return
+
+        # Stateful 2x interpolation prevents discontinuities at model chunk
+        # boundaries. Hold the last source sample until the next chunk arrives.
+        if self._previous_sample is None:
+            if samples.size < 2:
+                self._previous_sample = float(samples[-1])
+                return
+            left = samples[:-1]
+            right = samples[1:]
+        else:
+            joined = np.concatenate((
+                np.asarray([self._previous_sample], dtype=np.float32), samples
+            ))
+            left = joined[:-1]
+            right = joined[1:]
+
+        upsampled = np.empty(left.size * 2, dtype=np.float32)
+        upsampled[0::2] = left
+        upsampled[1::2] = (left + right) * 0.5
+        self._previous_sample = float(samples[-1])
+        pcm_mono = (np.clip(upsampled, -1.0, 1.0) * 32767.0).astype(np.int16)
+        self._queue_pcm(pcm_mono)
 
     def finish(self, error=None):
         if self._finished:
@@ -131,6 +154,24 @@ class StreamingPCMSource(discord.AudioSource):
                     self._frames.get_nowait()
                 except queue.Empty:
                     break
+            self._pending_pcm.clear()
+            self._previous_sample = None
+        else:
+            # Flush the final held sample and pad only once, at end of stream.
+            if self._previous_sample is not None:
+                import numpy as np
+                final_sample = np.asarray([self._previous_sample], dtype=np.float32)
+                pcm = (np.clip(final_sample, -1.0, 1.0) * 32767.0).astype(np.int16)
+                self._queue_pcm(pcm)
+                self._previous_sample = None
+            if self._pending_pcm:
+                self._pending_pcm.extend(
+                    bytes(self.FRAME_BYTES - len(self._pending_pcm))
+                )
+                frame = bytes(self._pending_pcm)
+                self._pending_pcm.clear()
+                self._frames.put(frame)
+                self._bytes += len(frame)
         self._frames.put(None)
 
     def read(self):
