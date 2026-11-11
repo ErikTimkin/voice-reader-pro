@@ -278,7 +278,7 @@ class VoiceService:
         self.worker = asyncio.create_task(self.play_worker())
         self.tts_load_task = asyncio.create_task(self._load_local_tts())
         self.armenian_load_task = asyncio.create_task(self._preload_armenian_tts())
-         self.loop_watchdog_task = asyncio.create_task(self._watch_event_loop())
+        self.loop_watchdog_task = asyncio.create_task(self._watch_event_loop())
         self.voice_watchdog_task = asyncio.create_task(self._watch_voice_connection())
         self.discord_task = asyncio.create_task(self._start_discord())
         self.discord_task.add_done_callback(self._discord_finished)
