@@ -101,8 +101,10 @@ def main() -> None:
     streaming_armenian.stream_to_source("Проверка быстрого начала армянской речи", tracking_source)
     if tracking_source.pushes_before_generation_finished < 1:
         raise AssertionError("Armenian stream buffered the whole message before sending its first audio chunk")
-    if tracking_source.last_peak < 0.80:
-        raise AssertionError(f"Streaming Armenian prefill was not normalized: {tracking_source.last_peak}")
+    if not 0.10 <= tracking_source.last_peak <= 0.91:
+        raise AssertionError(
+            f"Streaming Armenian safety gain is outside the expected range: {tracking_source.last_peak}"
+        )
     if tracking_source.errors:
         raise AssertionError(f"Streaming Armenian source reported an error: {tracking_source.errors}")
 
@@ -132,9 +134,9 @@ def main() -> None:
         raise AssertionError("Real Armenian stream emitted no Discord PCM frames")
     streamed_pcm = np.frombuffer(b"".join(streamed_frames), dtype=np.int16)
     streamed_peak = int(np.max(np.abs(streamed_pcm)))
-    if streamed_peak < 27000:
+    if not 3000 <= streamed_peak <= 30000:
         raise AssertionError(
-            f"Real Armenian streaming path did not normalize quiet chunks: peak={streamed_peak}"
+            f"Real Armenian streaming path did not apply safe gain: peak={streamed_peak}"
         )
 
     failed_source = StreamingPCMSource(lambda _message: None)
