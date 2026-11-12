@@ -315,16 +315,29 @@ class ArmenianAccentTTS:
 
         def send_normalized(samples: np.ndarray) -> None:
             nonlocal gain, raw_peak, normalized_peak, first_audio_ms
-            chunk_peak = float(np.max(np.abs(samples))) if samples.size else 0.0
+            absolute = np.abs(samples)
+            chunk_peak = float(np.max(absolute)) if samples.size else 0.0
+            chunk_rms = float(np.sqrt(np.mean(np.square(samples, dtype=np.float64)))) if samples.size else 0.0
             raw_peak = max(raw_peak, chunk_peak)
+            if not np.isfinite(samples).all():
+                raise RuntimeError("Pocket TTS вернула NaN/Inf в армянском аудио.")
+            # Use a robust percentile rather than a single sample peak: one bad
+            # transient in the first chunk must not set an extreme gain for the
+            # whole utterance. Keep a hard gain ceiling to prevent near-silence
+            # or malformed model output from becoming full-scale static.
+            robust_peak = float(np.percentile(absolute, 99.5)) if samples.size else 0.0
             if gain is None:
-                if chunk_peak < 1e-5:
+                if robust_peak < 1e-5 or chunk_rms < 1e-6:
                     raise RuntimeError("Pocket TTS вернула практически бесшумный армянский звук.")
-                gain = 0.85 / chunk_peak
-            elif chunk_peak * gain > 0.95:
-                # Fast-attack peak protection for louder later chunks.
-                gain = 0.95 / chunk_peak
-            normalized = np.clip(samples * gain, -0.95, 0.95).astype(np.float32)
+                gain = min(0.65 / robust_peak, 256.0)
+                self.log(
+                    f"Армянская защита уровня: RMS={chunk_rms:.6f}; "
+                    f"robust_peak={robust_peak:.6f}; усиление={gain:.1f}x."
+                )
+            elif chunk_peak * gain > 0.90:
+                # Fast-attack limiter: reduce gain before a later chunk can clip.
+                gain = 0.90 / chunk_peak
+            normalized = np.clip(samples * gain, -0.90, 0.90).astype(np.float32)
             if normalized.size:
                 normalized_peak = max(normalized_peak, float(np.max(np.abs(normalized))))
                 source.push_mono_24k(normalized)
