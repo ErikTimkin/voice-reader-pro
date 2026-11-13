@@ -167,6 +167,51 @@ def normalize_russian_for_pocket_tts(text: str) -> str:
     return value
 
 
+def _write_armenian_wav(audio, sample_rate: int, target_path: str | Path, logger) -> tuple[int, float]:
+    """Write a complete Pocket TTS utterance with conservative, robust gain."""
+    if hasattr(audio, "detach"):
+        samples = audio.detach().to("cpu").numpy()
+    else:
+        samples = np.asarray(audio)
+    samples = np.asarray(samples, dtype=np.float32).reshape(-1)
+    if samples.size == 0 or not np.isfinite(samples).all():
+        raise RuntimeError("Pocket TTS вернула пустой или некорректный армянский звук.")
+
+    absolute = np.abs(samples)
+    raw_peak = float(np.max(absolute))
+    rms = float(np.sqrt(np.mean(np.square(samples, dtype=np.float64))))
+    robust_peak = float(np.percentile(absolute, 99.5))
+    if robust_peak < 1e-5 or rms < 1e-6:
+        raise RuntimeError(
+            f"Pocket TTS вернула почти тишину (RMS={rms:.8f}, "
+            f"robust_peak={robust_peak:.8f})."
+        )
+
+    # Do not normalize tiny model output all the way to full scale: the old
+    # peak-only normalization could turn a low-level artifact into loud noise.
+    gain = min(0.65 / robust_peak, 256.0)
+    normalized = np.clip(samples * gain, -0.90, 0.90).astype(np.float32)
+    output_peak = float(np.max(np.abs(normalized)))
+    clipping_ratio = float(np.mean(np.abs(normalized) >= 0.899))
+
+    target_path = Path(target_path)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    pcm = (normalized * 32767.0).astype(np.int16)
+    with wave.open(str(target_path), "wb") as output:
+        output.setnchannels(1)
+        output.setsampwidth(2)
+        output.setframerate(sample_rate)
+        output.writeframes(pcm.tobytes())
+
+    logger(
+        f"Армянский WAV подготовлен целиком: RMS до={rms:.6f}; "
+        f"peak до={raw_peak:.6f}; robust_peak={robust_peak:.6f}; "
+        f"усиление={gain:.1f}x; peak после={output_peak:.3f}; "
+        f"ограниченных отсчётов={clipping_ratio:.3%}."
+    )
+    return target_path.stat().st_size, len(pcm) / sample_rate
+
+
 class ArmenianAccentTTS:
     """Russian speech conditioned on an anonymized Eastern Armenian speaker sample."""
 
@@ -289,7 +334,12 @@ class ArmenianAccentTTS:
                 prepared_text,
                 copy_state=True,
             )
-        return _write_audio_wav(audio, self.model.sample_rate, target_path)
+        return _write_armenian_wav(
+            audio,
+            self.model.sample_rate,
+            target_path,
+            self.log,
+        )
 
     def stream_to_source(self, text: str, source) -> None:
         """Prefill briefly, then normalize and forward Pocket TTS chunks as they arrive."""
