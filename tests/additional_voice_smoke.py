@@ -1,5 +1,7 @@
 import asyncio
+import math
 import sys
+import array
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,9 +16,27 @@ def check_wav(path: Path, minimum_size: int = 5000, minimum_duration: float = 0.
         raise AssertionError(f"Generated WAV is missing or too small: {path}")
     with wave.open(str(path), "rb") as audio:
         duration = audio.getnframes() / float(audio.getframerate())
+        pcm = array.array("h")
+        pcm.frombytes(audio.readframes(audio.getnframes()))
         if duration < minimum_duration:
             raise AssertionError(f"Generated WAV is too short ({duration:.2f}s): {path}")
-    print(f"{path.name}: {duration:.2f}s, {path.stat().st_size} bytes")
+    if not pcm:
+        raise AssertionError("Generated Armenian WAV contains no PCM samples")
+    peak = max(abs(sample) for sample in pcm)
+    rms = math.sqrt(sum(sample * sample for sample in pcm) / len(pcm))
+    clipped_ratio = sum(abs(sample) >= 29490 for sample in pcm) / len(pcm)
+    if peak < 500:
+        raise AssertionError(f"Armenian WAV is nearly silent (peak={peak})")
+    if peak >= 30000 or clipped_ratio > 0.001:
+        raise AssertionError(
+            f"Armenian WAV may be clipped (peak={peak}, clipped={clipped_ratio:.3%})"
+        )
+    if rms < 80:
+        raise AssertionError(f"Armenian WAV RMS is too low ({rms:.1f})")
+    print(
+        f"{path.name}: {duration:.2f}s, peak={peak}, RMS={rms:.1f}, "
+        f"clipped={clipped_ratio:.3%}, {path.stat().st_size} bytes"
+    )
 
 
 async def main_async() -> None:
@@ -30,7 +50,8 @@ async def main_async() -> None:
     for required in ("armenian_tri.yaml", "tri_v1/model.safetensors", "tri_v1/tokenizer_tri.model", "armenian_reference.wav", "armenian_voice_state.safetensors"):
         if not (armenian_assets / required).is_file():
             raise AssertionError(f"Armenian voice resource is missing: {required}")
-    armenian = ArmenianAccentTTS(armenian_assets, lambda _message: None)
+    diagnostics: list[str] = []
+    armenian = ArmenianAccentTTS(armenian_assets, diagnostics.append)
     armenian_path = samples / "armenian-accent-ru.wav"
     try:
         size, duration = await asyncio.to_thread(
@@ -39,6 +60,8 @@ async def main_async() -> None:
             armenian_path,
         )
         check_wav(armenian_path)
+        if not any("Армянский WAV подготовлен целиком" in line for line in diagnostics):
+            raise AssertionError("Armenian WAV gain diagnostics were not emitted")
     finally:
         armenian.unload()
         del armenian
