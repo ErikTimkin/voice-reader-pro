@@ -59,7 +59,7 @@ class LocalSileroTTS:
             if self.russian_accentor_enabled:
                 self.log("Загружаю локальную расстановку русских ударений Silero…")
                 from silero_stress import load_accentor
-                accentor = load_accentor(lang="ru")
+                accentor = load_accentor()
 
             # Warm every speaker before accepting requests, so the first
             # selected voice does not pay model or speaker initialization cost.
