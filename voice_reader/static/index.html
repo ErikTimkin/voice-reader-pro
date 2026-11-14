@@ -247,7 +247,12 @@
     const botStatus = document.querySelector('#botStatus');
     const botStatusText = document.querySelector('#botStatusText');
     const voiceCards = [...document.querySelectorAll('[data-voice]')];
+    const availableVoices = new Set(voiceCards.map(card => card.dataset.voice));
     let selectedVoice = '__DEFAULT_VOICE__';
+    try {
+      const savedVoice = localStorage.getItem('voiceReaderSelectedVoice');
+      if (availableVoices.has(savedVoice)) selectedVoice = savedVoice;
+    } catch (_) {}
     for (const card of voiceCards) {
       const active = card.dataset.voice === selectedVoice;
       card.classList.toggle('selected', active);
@@ -288,6 +293,7 @@
     function selectVoice(card) {
       if (card.disabled) return;
       selectedVoice = card.dataset.voice;
+      try { localStorage.setItem('voiceReaderSelectedVoice', selectedVoice); } catch (_) {}
       for (const item of voiceCards) {
         const active = item === card;
         item.classList.toggle('selected', active);
@@ -328,7 +334,12 @@
           message.value = '';
           counter.textContent = '0 / 350';
         }
-        setNotice(result.message || 'Сообщение добавлено в очередь.', 'success');
+        const acceptedVoice = result.voice || voice;
+        const acceptedLabel = result.voice_label || voiceCards.find(card => card.dataset.voice === acceptedVoice)?.querySelector('.voice-name')?.textContent || acceptedVoice;
+        if (acceptedVoice !== voice) {
+          throw new Error('Сервер принял другой голос. Обнови страницу и выбери голос ещё раз.');
+        }
+        setNotice((result.message || 'Сообщение добавлено в очередь.') + ' Голос: ' + acceptedLabel + '.', 'success');
       } catch (error) {
         setNotice(error.message || 'Не удалось связаться с сервером.', 'error');
       } finally {
