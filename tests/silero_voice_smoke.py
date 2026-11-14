@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,7 +33,45 @@ async def main_async() -> None:
         target.unlink(missing_ok=True)
         print(f"{preset}: {expected_speaker}, {duration:.2f}s, {size} bytes")
 
-    print("Male, female and cute Silero voices synthesized successfully.")
+    cis_model_path = ROOT / "voices" / "v5_cis_base.pt"
+    if not cis_model_path.is_file() or cis_model_path.stat().st_size < 50_000_000:
+        raise SystemExit(f"Silero CIS Armenian model is missing or incomplete: {cis_model_path}")
+
+    armenian2 = LocalSileroTTS(
+        cis_model_path,
+        print,
+        warmup_speakers=("ru_hye_zara",),
+        model_label="Silero v5 CIS Base",
+        russian_accentor=True,
+    )
+    print("Loading Armenian 2.0 model and Russian stress dictionary...")
+    await asyncio.to_thread(armenian2.load)
+    target = ROOT / "tests" / "silero-armenian2.wav"
+    started = time.perf_counter()
+    size, duration = await asyncio.to_thread(
+        armenian2.synthesize_to_wav,
+        "Привет! Это проверка армянского акцента. Как дела? Сегодня хорошая погода.",
+        "ru_hye_zara",
+        target,
+    )
+    elapsed = time.perf_counter() - started
+    if size < 5_000 or duration < 0.5:
+        raise AssertionError(
+            f"Armenian 2.0 generated suspicious audio: {size} bytes, {duration:.2f}s"
+        )
+    rtf = elapsed / duration
+    if rtf > 4.0:
+        raise AssertionError(
+            f"Armenian 2.0 CPU synthesis is too slow: {elapsed:.2f}s for "
+            f"{duration:.2f}s of speech (RTF={rtf:.2f}, limit=4.0)"
+        )
+    target.unlink(missing_ok=True)
+    print(
+        f"Armenian 2.0: ru_hye_zara, {duration:.2f}s audio in {elapsed:.2f}s "
+        f"(RTF={rtf:.2f}); WAV={size} bytes."
+    )
+
+    print("Male, female, cute and Armenian 2.0 Silero voices synthesized successfully.")
 
 
 if __name__ == "__main__":
