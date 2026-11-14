@@ -68,7 +68,11 @@ async def main_async(source_voices: Path) -> None:
         finally:
             armenian.unload()
 
-    with tempfile.TemporaryDirectory(prefix="voice-reader-silero-cis-portable-") as temp:
+    # PyTorch may keep the torch.package archive handle alive until process exit on Windows.
+    # The runner is ephemeral, so tolerate a locked temp model during cleanup.
+    with tempfile.TemporaryDirectory(
+        prefix="voice-reader-silero-cis-portable-", ignore_cleanup_errors=True
+    ) as temp:
         relocated_model = Path(temp) / "voices" / "v5_cis_base.pt"
         relocated_model.parent.mkdir(parents=True)
         shutil.copy2(cis_model, relocated_model)
