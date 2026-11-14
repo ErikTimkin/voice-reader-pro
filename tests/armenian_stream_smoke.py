@@ -20,6 +20,8 @@ def main() -> None:
 
     source = StreamingPCMSource(lambda _message: None)
     source.push_mono_24k(normalized)
+    if not source.wait_ready(0.1):
+        raise AssertionError("Streaming PCM source did not signal its playback prebuffer")
     source.finish()
     frames = []
     while True:
@@ -89,7 +91,7 @@ def main() -> None:
         def generate_audio_stream(self, _voice_state, _text, copy_state, stop):
             if not copy_state:
                 raise AssertionError("Pocket TTS stream must use an isolated voice state")
-            for _ in range(6):
+            for _ in range(12):
                 yield quiet_wave[:960]
             self.finished = True
 
