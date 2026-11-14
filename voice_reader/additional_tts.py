@@ -362,9 +362,10 @@ class ArmenianAccentTTS:
         gain = None
         prefill = []
         prefill_samples = 0
-        # Only hold about 160 ms to estimate a safe, stable gain. The old path
-        # buffered the entire utterance before Discord received its first frame.
-        prefill_target = max(1, int(self.model.sample_rate * 0.16))
+        # Hold about 400 ms before starting playback. This is long enough to
+        # estimate a stable level and gives Discord a safety buffer against
+        # small CPU scheduling/model-generation variations.
+        prefill_target = max(1, int(self.model.sample_rate * 0.40))
 
         def send_normalized(samples: np.ndarray) -> None:
             nonlocal gain, raw_peak, normalized_peak, first_audio_ms
@@ -374,23 +375,18 @@ class ArmenianAccentTTS:
             raw_peak = max(raw_peak, chunk_peak)
             if not np.isfinite(samples).all():
                 raise RuntimeError("Pocket TTS вернула NaN/Inf в армянском аудио.")
-            # Use a robust percentile rather than a single sample peak: one bad
-            # transient in the first chunk must not set an extreme gain for the
-            # whole utterance. Keep a hard gain ceiling to prevent near-silence
-            # or malformed model output from becoming full-scale static.
-            robust_peak = float(np.percentile(absolute, 99.5)) if samples.size else 0.0
+            # Use the true peak from the complete prefill, not a percentile
+            # that can leave transient samples far above the target. Keep one
+            # fixed gain for the whole utterance to avoid chunk-to-chunk pumping.
             if gain is None:
-                if robust_peak < 1e-5 or chunk_rms < 1e-6:
+                if chunk_peak < 1e-5 or chunk_rms < 1e-6:
                     raise RuntimeError("Pocket TTS вернула практически бесшумный армянский звук.")
-                gain = min(0.65 / robust_peak, 256.0)
+                gain = min(0.68 / chunk_peak, 256.0)
                 self.log(
                     f"Армянская защита уровня: RMS={chunk_rms:.6f}; "
-                    f"robust_peak={robust_peak:.6f}; усиление={gain:.1f}x."
+                    f"true_peak={chunk_peak:.6f}; усиление={gain:.1f}x."
                 )
-            elif chunk_peak * gain > 0.90:
-                # Fast-attack limiter: reduce gain before a later chunk can clip.
-                gain = 0.90 / chunk_peak
-            normalized = np.clip(samples * gain, -0.90, 0.90).astype(np.float32)
+            normalized = np.clip(samples * gain, -0.92, 0.92).astype(np.float32)
             if normalized.size:
                 normalized_peak = max(normalized_peak, float(np.max(np.abs(normalized))))
                 source.push_mono_24k(normalized)
