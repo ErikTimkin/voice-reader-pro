@@ -39,7 +39,7 @@ async def main_async() -> None:
 
     armenian2 = LocalSileroTTS(
         cis_model_path,
-        print,
+        lambda _message: None,
         warmup_speakers=("ru_zara",),
         model_label="Silero v5 CIS Base",
         russian_accentor=True,
@@ -47,28 +47,32 @@ async def main_async() -> None:
     print("Loading Armenian 2.0 model and Russian stress dictionary...")
     await asyncio.to_thread(armenian2.load)
     target = ROOT / "tests" / "silero-armenian2.wav"
-    started = time.perf_counter()
-    size, duration = await asyncio.to_thread(
-        armenian2.synthesize_to_wav,
-        "Привет! Это проверка армянского акцента. Как дела? Сегодня хорошая погода.",
-        "ru_zara",
-        target,
-    )
-    elapsed = time.perf_counter() - started
+    sample_text = "Привет! Это проверка армянского акцента. Как дела? Сегодня хорошая погода."
+    trials = []
+    for index in range(3):
+        started = time.perf_counter()
+        size, duration = await asyncio.to_thread(
+            armenian2.synthesize_to_wav,
+            sample_text,
+            "ru_zara",
+            target,
+        )
+        elapsed = time.perf_counter() - started
+        trials.append((elapsed, duration, elapsed / max(duration, 0.01)))
+    elapsed, duration, rtf = sorted(trials, key=lambda item: item[2])[1]
     if size < 5_000 or duration < 0.5:
         raise AssertionError(
             f"Armenian 2.0 generated suspicious audio: {size} bytes, {duration:.2f}s"
         )
-    rtf = elapsed / duration
-    if rtf > 4.0:
+    if rtf > 1.5:
         raise AssertionError(
             f"Armenian 2.0 CPU synthesis is too slow: {elapsed:.2f}s for "
-            f"{duration:.2f}s of speech (RTF={rtf:.2f}, limit=4.0)"
+            f"{duration:.2f}s of speech (median RTF={rtf:.2f}, limit=1.5)"
         )
     target.unlink(missing_ok=True)
     print(
-        f"Armenian 2.0: ru_zara, {duration:.2f}s audio in {elapsed:.2f}s "
-        f"(RTF={rtf:.2f}); WAV={size} bytes."
+        f"Armenian 2.0: ru_zara, median of 3 runs; {duration:.2f}s audio in "
+        f"{elapsed:.2f}s (RTF={rtf:.2f}); WAV={size} bytes."
     )
 
     print("Male, female, cute and Armenian 2.0 Silero voices synthesized successfully.")
