@@ -24,18 +24,22 @@ def check_wav(path: Path, minimum_size: int = 5000, minimum_duration: float = 0.
         raise AssertionError("Generated Armenian WAV contains no PCM samples")
     peak = max(abs(sample) for sample in pcm)
     rms = math.sqrt(sum(sample * sample for sample in pcm) / len(pcm))
-    clipped_ratio = sum(abs(sample) >= 29490 for sample in pcm) / len(pcm)
+    # The Armenian writer intentionally applies a -0.9 limiter (~29490 PCM).
+    # Count only near-full-scale int16 saturation as hard clipping; counting
+    # the limiter ceiling itself falsely rejects healthy, deliberately limited audio.
+    hard_clipped_ratio = sum(abs(sample) >= 32760 for sample in pcm) / len(pcm)
     if peak < 500:
         raise AssertionError(f"Armenian WAV is nearly silent (peak={peak})")
-    if peak >= 30000 or clipped_ratio > 0.001:
+    if peak >= 32760 or hard_clipped_ratio > 0.0001:
         raise AssertionError(
-            f"Armenian WAV may be clipped (peak={peak}, clipped={clipped_ratio:.3%})"
+            f"Armenian WAV has hard digital clipping (peak={peak}, "
+            f"hard_clipped={hard_clipped_ratio:.3%})"
         )
     if rms < 80:
         raise AssertionError(f"Armenian WAV RMS is too low ({rms:.1f})")
     print(
         f"{path.name}: {duration:.2f}s, peak={peak}, RMS={rms:.1f}, "
-        f"clipped={clipped_ratio:.3%}, {path.stat().st_size} bytes"
+        f"hard_clipped={hard_clipped_ratio:.3%}, {path.stat().st_size} bytes"
     )
 
 
