@@ -40,7 +40,7 @@ async def main_async() -> None:
     armenian2 = LocalSileroTTS(
         cis_model_path,
         print,
-        warmup_speakers=("ru_hye_zara",),
+        warmup_speakers=("ru_zara",),
         model_label="Silero v5 CIS Base",
         russian_accentor=True,
     )
@@ -51,7 +51,7 @@ async def main_async() -> None:
     size, duration = await asyncio.to_thread(
         armenian2.synthesize_to_wav,
         "Привет! Это проверка армянского акцента. Как дела? Сегодня хорошая погода.",
-        "ru_hye_zara",
+        "ru_zara",
         target,
     )
     elapsed = time.perf_counter() - started
@@ -67,7 +67,7 @@ async def main_async() -> None:
         )
     target.unlink(missing_ok=True)
     print(
-        f"Armenian 2.0: ru_hye_zara, {duration:.2f}s audio in {elapsed:.2f}s "
+        f"Armenian 2.0: ru_zara, {duration:.2f}s audio in {elapsed:.2f}s "
         f"(RTF={rtf:.2f}); WAV={size} bytes."
     )
 
