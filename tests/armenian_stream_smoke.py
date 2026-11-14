@@ -24,6 +24,16 @@ def main() -> None:
         raise AssertionError("Streaming PCM source did not signal its playback prebuffer")
     ready_source.finish()
 
+    # A temporary producer pause must return a full silence frame rather than
+    # block Discord's player thread or terminate the stream.
+    starved_source = StreamingPCMSource(lambda _message: None)
+    silence_frame = starved_source.read()
+    if len(silence_frame) != StreamingPCMSource.FRAME_BYTES or any(silence_frame):
+        raise AssertionError("An empty Armenian buffer must yield one full PCM silence frame")
+    starved_source.finish()
+    if starved_source.read() != b"":
+        raise AssertionError("Finished Armenian stream must terminate after its sentinel")
+
     source = StreamingPCMSource(lambda _message: None)
     source.push_mono_24k(normalized)
     source.finish()
