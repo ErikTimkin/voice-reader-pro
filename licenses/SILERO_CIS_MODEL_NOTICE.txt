@@ -1,0 +1,23 @@
+Silero Armenian-accent voice notice
+=====================================
+
+Bundled model:
+- Silero v5 CIS Base (v5_cis_base.pt)
+- Speaker: ru_hye_zara (Russian text, Armenian speaker identity)
+
+Official model source:
+https://models.silero.ai/models/tts/ru/v5_cis_base.pt
+Upstream project:
+https://github.com/snakers4/silero-models
+
+The Silero v5 CIS Base models are published under the MIT License.
+The Russian stress/accentuation helper is silero-stress 1.5, also published
+under the MIT License:
+https://github.com/snakers4/silero-stress
+
+This preset uses the ru_hye_zara speaker variant for Russian-language input.
+It is a separate Silero CIS model package, while the existing Russian voices
+continue to use the existing v5_6_ru.pt model.
+
+Attribution:
+Silero Team — Silero Models and silero-stress.
