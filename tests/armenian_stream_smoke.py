@@ -18,10 +18,14 @@ def main() -> None:
     if not 0.84 <= normalized_peak <= 0.86:
         raise AssertionError(f"Quiet TTS audio was not normalized: {normalized_peak}")
 
+    ready_source = StreamingPCMSource(lambda _message: None)
+    ready_source.push_mono_24k(np.tile(normalized, 3))
+    if not ready_source.wait_ready(0.1):
+        raise AssertionError("Streaming PCM source did not signal its playback prebuffer")
+    ready_source.finish()
+
     source = StreamingPCMSource(lambda _message: None)
     source.push_mono_24k(normalized)
-    if not source.wait_ready(0.1):
-        raise AssertionError("Streaming PCM source did not signal its playback prebuffer")
     source.finish()
     frames = []
     while True:
