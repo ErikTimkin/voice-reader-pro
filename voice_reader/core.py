@@ -226,12 +226,21 @@ class VoiceService:
         self.voice, self.ffmpeg, self.log = voice, str(ffmpeg), logger
         self.local_tts = LocalSileroTTS(tts_model_path, logger)
         voice_assets = Path(tts_model_path).parent
+        self.armenian2_tts = LocalSileroTTS(
+            voice_assets / "v5_cis_base.pt",
+            logger,
+            warmup_speakers=("ru_hye_zara",),
+            model_label="Silero v5 CIS Base",
+            russian_accentor=True,
+        )
         self.armenian_tts = ArmenianAccentTTS(voice_assets / "armenian", logger)
         self.pop_tts = TeraPopTTS(voice_assets / "teratts", logger)
         self.tts_ready = asyncio.Event()
         self.tts_error = None
         self.armenian_ready = asyncio.Event()
         self.armenian_error = None
+        self.armenian2_ready = asyncio.Event()
+        self.armenian2_error = None
          # Unbounded FIFO: users can submit repeatedly without per-minute throttling.
         self.queue = asyncio.Queue()
         self.client = discord.Client(intents=discord.Intents(guilds=True, voice_states=True))
@@ -344,6 +353,7 @@ class VoiceService:
         self.worker = asyncio.create_task(self.play_worker())
         self.tts_load_task = asyncio.create_task(self._load_local_tts())
         self.armenian_load_task = asyncio.create_task(self._preload_armenian_tts())
+        self.armenian2_load_task = asyncio.create_task(self._preload_armenian2_tts())
         self.loop_watchdog_task = asyncio.create_task(self._watch_event_loop())
         self.voice_watchdog_task = asyncio.create_task(self._watch_voice_connection())
         self.discord_task = asyncio.create_task(self._start_discord())
@@ -386,6 +396,27 @@ class VoiceService:
             self.log(f"Не удалось заранее загрузить армянский голос: {self.armenian_error}")
         finally:
             self.armenian_ready.set()
+
+    async def _preload_armenian2_tts(self):
+        """Load the Silero CIS Armenian-accent speaker without blocking Discord."""
+        try:
+            # Serialize the two Silero package loads to avoid a CPU/RAM spike.
+            await self.tts_ready.wait()
+            await asyncio.sleep(1)
+            started = time.perf_counter()
+            await asyncio.to_thread(self.armenian2_tts.load)
+            elapsed = (time.perf_counter() - started) * 1000
+            self.log(
+                f"Армянский 2.0 (Silero ru_hye_zara) готов за {elapsed:.0f} мс. "
+                "Модель и русские ударения прогреты заранее."
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            self.armenian2_error = f"{type(exc).__name__}: {exc}"
+            self.log(f"Не удалось загрузить Армянский 2.0: {self.armenian2_error}")
+        finally:
+            self.armenian2_ready.set()
 
     async def _watch_event_loop(self):
         # Discord heartbeat warnings mean the asyncio loop was not scheduled.
@@ -615,6 +646,14 @@ class VoiceService:
                             f'ошибка загрузки Pocket TTS: {self.armenian_error}'
                         )
                         continue
+                elif engine == "silero_cis":
+                    await self.armenian2_ready.wait()
+                    if self.armenian2_error:
+                        self.log(
+                            f'Голос «{profile["label"]}» недоступен: '
+                            f'ошибка загрузки Silero CIS: {self.armenian2_error}'
+                        )
+                        continue
                 self.log(
                     f'Локальная озвучка: {profile["label"]}; '
                     f'движок={engine}; диктор={profile.get("speaker", selected_voice)}.'
@@ -656,9 +695,10 @@ class VoiceService:
                 else:
                     fd, file_name = tempfile.mkstemp(suffix='.wav', prefix='voice-reader-')
                     os.close(fd)
-                    if engine == "silero":
+                    if engine in ("silero", "silero_cis"):
+                        tts_engine = self.local_tts if engine == "silero" else self.armenian2_tts
                         audio_bytes, audio_duration = await asyncio.to_thread(
-                            self.local_tts.synthesize_to_wav,
+                            tts_engine.synthesize_to_wav,
                             speech_text,
                             profile["speaker"],
                             file_name,
@@ -836,7 +876,8 @@ class VoiceService:
             self.start_watchdog,
             self.tts_load_task,
             self.armenian_load_task,
-             self.loop_watchdog_task,
+            self.armenian2_load_task,
+            self.loop_watchdog_task,
             self.voice_watchdog_task,
         ):
             if task and not task.done():
