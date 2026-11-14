@@ -33,6 +33,21 @@ async def main_async() -> None:
         target.unlink(missing_ok=True)
         print(f"{preset}: {expected_speaker}, {duration:.2f}s, {size} bytes")
 
+    sample_text = "Привет! Это проверка армянского акцента. Как дела? Сегодня хорошая погода."
+    baseline_trials = []
+    baseline_path = ROOT / "tests" / "silero-baseline-benchmark.wav"
+    for _ in range(3):
+        started = time.perf_counter()
+        base_size, base_duration = await asyncio.to_thread(
+            tts.synthesize_to_wav, sample_text, "aidar", baseline_path
+        )
+        base_elapsed = time.perf_counter() - started
+        baseline_trials.append((base_elapsed, base_duration, base_elapsed / max(base_duration, 0.01)))
+    baseline_elapsed, baseline_duration, baseline_rtf = sorted(
+        baseline_trials, key=lambda item: item[2]
+    )[1]
+    baseline_path.unlink(missing_ok=True)
+
     cis_model_path = ROOT / "voices" / "v5_cis_base.pt"
     if not cis_model_path.is_file() or cis_model_path.stat().st_size < 50_000_000:
         raise SystemExit(f"Silero CIS Armenian model is missing or incomplete: {cis_model_path}")
@@ -45,9 +60,10 @@ async def main_async() -> None:
         russian_accentor=True,
     )
     print("Loading Armenian 2.0 model and Russian stress dictionary...")
+    load_started = time.perf_counter()
     await asyncio.to_thread(armenian2.load)
+    load_elapsed = time.perf_counter() - load_started
     target = ROOT / "tests" / "silero-armenian2.wav"
-    sample_text = "Привет! Это проверка армянского акцента. Как дела? Сегодня хорошая погода."
     trials = []
     for index in range(3):
         started = time.perf_counter()
@@ -64,15 +80,18 @@ async def main_async() -> None:
         raise AssertionError(
             f"Armenian 2.0 generated suspicious audio: {size} bytes, {duration:.2f}s"
         )
-    if rtf > 1.5:
+    if rtf > 1.5 or rtf > baseline_rtf * 1.75:
         raise AssertionError(
             f"Armenian 2.0 CPU synthesis is too slow: {elapsed:.2f}s for "
-            f"{duration:.2f}s of speech (median RTF={rtf:.2f}, limit=1.5)"
+            f"{duration:.2f}s of speech (Armenian median RTF={rtf:.2f}, "
+            f"standard Silero median RTF={baseline_rtf:.2f}, limits=1.5 and "
+            f"1.75x baseline)"
         )
     target.unlink(missing_ok=True)
     print(
-        f"Armenian 2.0: ru_zara, median of 3 runs; {duration:.2f}s audio in "
-        f"{elapsed:.2f}s (RTF={rtf:.2f}); WAV={size} bytes."
+        f"Standard Silero (aidar) median RTF={baseline_rtf:.2f}; "
+        f"Armenian 2.0 (ru_zara) median RTF={rtf:.2f}; "
+        f"model load + warmup={load_elapsed:.2f}s; WAV={size} bytes."
     )
 
     print("Male, female, cute and Armenian 2.0 Silero voices synthesized successfully.")
