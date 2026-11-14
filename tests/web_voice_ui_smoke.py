@@ -9,8 +9,8 @@ from voice_reader.voice_profiles import VOICE_PRESETS
 
 
 def main() -> None:
-    if set(VOICE_PRESETS) != {"normal", "female", "cute_girl", "armenian", "jelly_bear"}:
-        raise AssertionError(f"Expected five browser voice presets: {list(VOICE_PRESETS)}")
+    if set(VOICE_PRESETS) != {"normal", "female", "cute_girl", "armenian", "armenian2", "jelly_bear"}:
+        raise AssertionError(f"Expected six browser voice presets: {list(VOICE_PRESETS)}")
     for voice in VOICE_PRESETS:
         assert normalize_voice_key(voice) == voice
     assert VOICE_PRESETS["jelly_bear"]["speaker"] == "aidar"
@@ -19,14 +19,16 @@ def main() -> None:
     assert normalize_voice_key("pop") == "cute_girl"
     assert normalize_voice_key("pudge") == "normal"
     assert VOICE_PRESETS["armenian"]["engine"] == "armenian"
+    assert VOICE_PRESETS["armenian2"]["engine"] == "silero_cis"
+    assert VOICE_PRESETS["armenian2"]["speaker"] == "ru_hye_zara"
     assert VOICE_PRESETS["female"]["speaker"] == "baya"
     assert VOICE_PRESETS["cute_girl"]["speaker"] == "xenia"
 
     page = (ROOT / "voice_reader" / "static" / "index.html").read_text(encoding="utf-8")
     required = [
         'data-voice="normal"', 'data-voice="female"', 'data-voice="cute_girl"',
-        'data-voice="armenian"', 'data-voice="jelly_bear"', "Желейный медведь",
-        'Обычный мужской', 'Обычный женский', 'Армянский акцент', 'Милый голос',
+        'data-voice="armenian"', 'data-voice="armenian2"', 'data-voice="jelly_bear"', "Желейный медведь",
+        'Обычный мужской', 'Обычный женский', 'Армянский акцент', 'Армянский 2.0', 'Милый голос',
         "event.key === 'Enter'", "!event.shiftKey",
         "JSON.stringify({text: text, voice: voice})", "-apple-system",
         "--page: #f5f5f7", "pendingRequests", "Отправить",
@@ -71,6 +73,7 @@ def main() -> None:
         "Запрос сайта: выбран голос=",
         "'voice': requested_voice",
         "self.armenian_tts.stream_to_source",
+        "self.armenian2_tts",
         "source.wait_ready, 4.0",
         "isinstance(source, StreamingPCMSource)",
     ]:
@@ -83,7 +86,7 @@ def main() -> None:
     if "self.queue = asyncio.Queue()" not in core or "self.queue.full()" in core:
         raise AssertionError("The message queue must not reject requests due to a fixed capacity")
 
-    print("Five browser voice presets, selectable/copyable desktop logs, and desktop UI passed.")
+    print("Six browser voice presets, selectable/copyable desktop logs, and desktop UI passed.")
 
 
 if __name__ == "__main__":
