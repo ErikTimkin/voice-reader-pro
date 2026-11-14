@@ -595,6 +595,17 @@ def run_frozen_voice_smoke_test(preset: str) -> int:
             tts.load()
             size, duration = tts.synthesize_to_wav(sample_text, profile["speaker"], output_path)
             del tts
+        elif engine == "silero_cis":
+            tts = LocalSileroTTS(
+                VOICE_ASSETS / "v5_cis_base.pt",
+                log,
+                warmup_speakers=("ru_hye_zara",),
+                model_label="Silero v5 CIS Base",
+                russian_accentor=True,
+            )
+            tts.load()
+            size, duration = tts.synthesize_to_wav(sample_text, profile["speaker"], output_path)
+            del tts
         elif engine == "armenian":
             tts = ArmenianAccentTTS(VOICE_ASSETS / "armenian", log)
             size, duration = tts.synthesize_to_wav(sample_text, output_path)
