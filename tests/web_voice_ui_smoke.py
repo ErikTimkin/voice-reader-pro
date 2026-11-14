@@ -31,6 +31,9 @@ def main() -> None:
         "JSON.stringify({text: text, voice: voice})", "-apple-system",
         "--page: #f5f5f7", "pendingRequests", "Отправить",
         "let selectedVoice = '__DEFAULT_VOICE__';",
+        "localStorage.getItem('voiceReaderSelectedVoice')",
+        "localStorage.setItem('voiceReaderSelectedVoice', selectedVoice)",
+        "result.voice || voice",
         "card.dataset.voice === selectedVoice",
     ]
     for fragment in required:
@@ -64,6 +67,15 @@ def main() -> None:
         raise AssertionError("Log Text widget must remain selectable for copying")
 
     core = (ROOT / "voice_reader" / "core.py").read_text(encoding="utf-8")
+    for fragment in [
+        "Запрос сайта: выбран голос=",
+        "'voice': requested_voice",
+        "self.armenian_tts.stream_to_source",
+        "source.wait_ready, 4.0",
+        "isinstance(source, StreamingPCMSource)",
+    ]:
+        if fragment not in core:
+            raise AssertionError(f"Voice routing/stream reliability feature is missing: {fragment}")
     if "LocalSileroTTS" not in core or "v5_6_ru.pt" not in app:
         raise AssertionError("The default and female Silero voices must remain installed")
     if "RATE_WINDOW" in core or "RATE_COUNT" in core or "def allowed(" in core:
