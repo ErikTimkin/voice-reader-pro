@@ -322,7 +322,7 @@ class App:
         self.status.set('Запуск…')
         self.thread = threading.Thread(
             target=self.run,
-            args=(token, guild, channel, 'normal', ffmpeg, cloudflared),
+            args=(token, guild, channel, 'armenian', ffmpeg, cloudflared),
             daemon=True,
         )
         self.thread.start()
