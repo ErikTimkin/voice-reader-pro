@@ -20,6 +20,7 @@ tokenizers_datas, tokenizers_binaries, tokenizers_hiddenimports = collect_all("t
 transformers_datas, transformers_binaries, transformers_hiddenimports = collect_all("transformers")
 huggingface_datas, huggingface_binaries, huggingface_hiddenimports = collect_all("huggingface_hub")
 pydantic_datas, pydantic_binaries, pydantic_hiddenimports = collect_all("pydantic")
+stress_datas, stress_binaries, stress_hiddenimports = collect_all("silero_stress")
 
 a = Analysis(
     [str(root / "voice_reader" / "app.py")],
