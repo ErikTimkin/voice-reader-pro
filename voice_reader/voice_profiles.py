@@ -29,15 +29,9 @@ VOICE_PRESETS = {
         "ffmpeg_options": "-af asetrate=42240,aresample=48000,atempo=1.136,bass=g=5:f=150,lowpass=f=5200,acompressor=threshold=0.12:ratio=2.2:attack=8:release=90,volume=1.2",
     },
     "armenian": {
-        "label": "Армянский акцент",
+        "label": "Восточный мужской акцент",
         "engine": "armenian",
         "ffmpeg_options": "-af volume=1.1",
-    },
-    "armenian2": {
-        "label": "Армянский 2.0",
-        "engine": "silero_cis",
-        "speaker": "ru_zara",
-        "ffmpeg_options": "-af volume=1.15",
     },
 }
 
@@ -55,6 +49,7 @@ LEGACY_VOICE_IDS = {
     "ru-RU-SvetlanaNeural": "female",
     "dariya": "female",
     "ru-RU-DariyaNeural": "female",
+    "armenian2": "armenian",
 }
 
 
