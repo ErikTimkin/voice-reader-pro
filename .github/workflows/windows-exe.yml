@@ -51,22 +51,29 @@ jobs:
           Invoke-WebRequest -Uri 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe' -OutFile tools/cloudflared.exe
           & (Join-Path $PWD 'tools/cloudflared.exe') --version
           if ($LASTEXITCODE -ne 0) { throw 'Bundled cloudflared failed its version check' }
-      - name: Download local Russian voice model
+      - name: Download local Russian and Armenian-accent Silero models
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force voices | Out-Null
           Invoke-WebRequest -Uri 'https://models.silero.ai/models/tts/ru/v5_6_ru.pt' -OutFile voices/v5_6_ru.pt
-          $modelSize = (Get-Item voices/v5_6_ru.pt).Length
-          if ($modelSize -lt 50000000) { throw "Silero model download is incomplete: $modelSize bytes" }
+          $ruSize = (Get-Item voices/v5_6_ru.pt).Length
+          if ($ruSize -lt 50000000) { throw "Russian Silero model download is incomplete: $ruSize bytes" }
+
+          Invoke-WebRequest -Uri 'https://models.silero.ai/models/tts/ru/v5_cis_base.pt' -OutFile voices/v5_cis_base.pt
+          $cisSize = (Get-Item voices/v5_cis_base.pt).Length
+          if ($cisSize -lt 50000000) { throw "Silero CIS Armenian model download is incomplete: $cisSize bytes" }
+
           Copy-Item licenses/SILERO_MODEL_NOTICE.txt voices/SILERO_MODEL_NOTICE.txt
-          Write-Host "Downloaded shared Silero model: $modelSize bytes"
+          Copy-Item licenses/SILERO_CIS_MODEL_NOTICE.txt voices/SILERO_CIS_MODEL_NOTICE.txt
+          Write-Host "Downloaded Russian Silero model: $ruSize bytes"
+          Write-Host "Downloaded Silero CIS Armenian-accent model: $cisSize bytes"
       - name: Download and prepare additional offline voices
         run: python tools/prepare_additional_voices.py --voices-dir voices --ffmpeg tools/ffmpeg.exe
       - name: Check source
         run: python -m compileall -q voice_reader tests
       - name: Test Russian number pronunciation
         run: python tests/number_normalizer_smoke.py
-      - name: Test five voice selector and Enter behavior
+      - name: Test six voice selector options and Enter behavior
         run: python tests/web_voice_ui_smoke.py
       - name: Verify DAVE 0.2 and Opus voice support
         run: python tests/dave_compat_smoke.py
@@ -97,7 +104,9 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force dist/VoiceReaderPro/voices | Out-Null
           Copy-Item voices/v5_6_ru.pt dist/VoiceReaderPro/voices/v5_6_ru.pt -Force
+          Copy-Item voices/v5_cis_base.pt dist/VoiceReaderPro/voices/v5_cis_base.pt -Force
           Copy-Item voices/SILERO_MODEL_NOTICE.txt dist/VoiceReaderPro/voices/SILERO_MODEL_NOTICE.txt -Force
+          Copy-Item voices/SILERO_CIS_MODEL_NOTICE.txt dist/VoiceReaderPro/voices/SILERO_CIS_MODEL_NOTICE.txt -Force
           New-Item -ItemType Directory -Force dist/VoiceReaderPro/voices/armenian | Out-Null
           Copy-Item -Path voices/armenian/* -Destination dist/VoiceReaderPro/voices/armenian -Recurse -Force
 
@@ -108,7 +117,7 @@ jobs:
         shell: pwsh
         run: |
           $exe = Join-Path $PWD 'dist/VoiceReaderPro/VoiceReaderPro.exe'
-          foreach ($voice in @('normal', 'female', 'cute_girl', 'armenian', 'jelly_bear')) {
+          foreach ($voice in @('normal', 'female', 'cute_girl', 'armenian', 'armenian2', 'jelly_bear')) {
             $logPath = Join-Path $env:TEMP "VoiceReaderPro-smoke-$voice.log"
             Remove-Item $logPath -Force -ErrorAction SilentlyContinue
             Write-Host "Testing packaged EXE voice: $voice"
