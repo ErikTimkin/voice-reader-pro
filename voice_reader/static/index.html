@@ -208,14 +208,9 @@
           <span class="voice-desc">Высокий, звонкий мультяшный голос</span>
         </button>
         <button class="voice armenian" type="button" data-voice="armenian" aria-pressed="false">
-          <span class="voice-top"><span class="voice-symbol">Ա</span><span class="selection">✓</span></span>
-          <span class="voice-name">Армянский акцент</span>
-          <span class="voice-desc">Русская речь с восточноармянским тембром</span>
-        </button>
-        <button class="voice armenian2" type="button" data-voice="armenian2" aria-pressed="false">
-          <span class="voice-top"><span class="voice-symbol">Ա2</span><span class="selection">✓</span></span>
-          <span class="voice-name">Армянский 2.0</span>
-          <span class="voice-desc">Silero · русский язык с армянским тембром</span>
+          <span class="voice-top"><span class="voice-symbol">◈</span><span class="selection">✓</span></span>
+          <span class="voice-name">Восточный мужской акцент</span>
+          <span class="voice-desc">Русская речь с низким восточным тембром</span>
         </button>
       </div>
 
@@ -257,7 +252,8 @@
     let selectedVoice = '__DEFAULT_VOICE__';
     try {
       const savedVoice = localStorage.getItem('voiceReaderSelectedVoice');
-      if (availableVoices.has(savedVoice)) selectedVoice = savedVoice;
+      if (savedVoice === 'armenian2') selectedVoice = 'armenian';
+      else if (availableVoices.has(savedVoice)) selectedVoice = savedVoice;
     } catch (_) {}
     for (const card of voiceCards) {
       const active = card.dataset.voice === selectedVoice;
