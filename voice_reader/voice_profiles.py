@@ -36,7 +36,7 @@ VOICE_PRESETS = {
     "armenian2": {
         "label": "Армянский 2.0",
         "engine": "silero_cis",
-        "speaker": "ru_hye_zara",
+        "speaker": "ru_zara",
         "ffmpeg_options": "-af volume=1.15",
     },
 }
