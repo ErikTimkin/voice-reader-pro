@@ -402,7 +402,6 @@ class VoiceService:
         try:
             # Serialize the two Silero package loads to avoid a CPU/RAM spike.
             await self.tts_ready.wait()
-            await asyncio.sleep(1)
             started = time.perf_counter()
             await asyncio.to_thread(self.armenian2_tts.load)
             elapsed = (time.perf_counter() - started) * 1000
