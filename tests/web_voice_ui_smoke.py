@@ -56,8 +56,8 @@ def main() -> None:
         raise AssertionError("Desktop log widget must be created exactly once")
     if "voice_preset" in app:
         raise AssertionError("Desktop startup must use the browser-selected voice only")
-    if "args=(token, guild, channel, 'normal', ffmpeg, cloudflared)" not in app:
-        raise AssertionError("Desktop service must start with a valid default voice argument")
+    if "args=(token, guild, channel, 'armenian', ffmpeg, cloudflared)" not in app:
+        raise AssertionError("New desktop sessions must default to the Armenian accent voice")
     if "self.log = tk.Text(\n            log_body," not in app:
         raise AssertionError("Log Text widget must be created inside its actual parent frame")
     if "self.log.pack(in_=log_body" in app:
