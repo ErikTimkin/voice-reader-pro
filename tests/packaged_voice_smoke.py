@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from voice_reader.additional_tts import ArmenianAccentTTS
+from voice_reader.local_tts import LocalSileroTTS
 
 
 def verify_wav(path: Path, minimum_bytes: int = 5_000) -> None:
@@ -26,6 +27,9 @@ def verify_wav(path: Path, minimum_bytes: int = 5_000) -> None:
 
 async def main_async(source_voices: Path) -> None:
     source_voices = source_voices.resolve()
+    cis_model = source_voices / "v5_cis_base.pt"
+    if not cis_model.is_file() or cis_model.stat().st_size < 50_000_000:
+        raise AssertionError(f"Packaged Silero CIS model is missing or incomplete: {cis_model}")
     for relative in (
         Path("armenian/armenian_tri.yaml"),
         Path("armenian/armenian_reference.wav"),
@@ -64,7 +68,28 @@ async def main_async(source_voices: Path) -> None:
         finally:
             armenian.unload()
 
-    print("Armenian voice synthesized successfully from a relocated offline package.")
+    with tempfile.TemporaryDirectory(prefix="voice-reader-silero-cis-portable-") as temp:
+        relocated_model = Path(temp) / "voices" / "v5_cis_base.pt"
+        relocated_model.parent.mkdir(parents=True)
+        shutil.copy2(cis_model, relocated_model)
+        silero_cis = LocalSileroTTS(
+            relocated_model,
+            print,
+            warmup_speakers=("ru_hye_zara",),
+            model_label="Silero v5 CIS Base",
+            russian_accentor=True,
+        )
+        cis_wav = Path(temp) / "portable-armenian2.wav"
+        await asyncio.to_thread(silero_cis.load)
+        await asyncio.to_thread(
+            silero_cis.synthesize_to_wav,
+            "Проверка русского текста с армянским тембром.",
+            "ru_hye_zara",
+            cis_wav,
+        )
+        verify_wav(cis_wav)
+
+    print("Original Armenian and Armenian 2.0 voices synthesized from relocated offline packages.")
 
 
 def main() -> None:
