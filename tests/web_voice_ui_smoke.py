@@ -20,7 +20,7 @@ def main() -> None:
     assert normalize_voice_key("pudge") == "normal"
     assert VOICE_PRESETS["armenian"]["engine"] == "armenian"
     assert VOICE_PRESETS["armenian2"]["engine"] == "silero_cis"
-    assert VOICE_PRESETS["armenian2"]["speaker"] == "ru_hye_zara"
+    assert VOICE_PRESETS["armenian2"]["speaker"] == "ru_zara"
     assert VOICE_PRESETS["female"]["speaker"] == "baya"
     assert VOICE_PRESETS["cute_girl"]["speaker"] == "xenia"
 
