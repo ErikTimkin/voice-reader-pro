@@ -74,7 +74,7 @@ async def main_async(source_voices: Path) -> None:
         shutil.copy2(cis_model, relocated_model)
         silero_cis = LocalSileroTTS(
             relocated_model,
-            print,
+            lambda _message: None,
             warmup_speakers=("ru_zara",),
             model_label="Silero v5 CIS Base",
             russian_accentor=True,
