@@ -11,12 +11,24 @@ import torch
 SAMPLE_RATE = 48000
 
 class LocalSileroTTS:
-    """Loads one local Russian Silero model and synthesizes WAV files on CPU."""
+    """Loads a local Silero model and synthesizes complete WAV files on CPU."""
 
-    def __init__(self, model_path: str | Path, logger):
+    def __init__(
+        self,
+        model_path: str | Path,
+        logger,
+        *,
+        warmup_speakers: tuple[str, ...] = ("aidar", "baya", "xenia"),
+        model_label: str = "Silero v5.6",
+        russian_accentor: bool = False,
+    ):
         self.model_path = Path(model_path)
         self.log = logger
         self.model = None
+        self.warmup_speakers = tuple(warmup_speakers)
+        self.model_label = model_label
+        self.russian_accentor_enabled = russian_accentor
+        self.accentor = None
         self._load_lock = Lock()
         self._synthesis_lock = Lock()
 
@@ -38,24 +50,35 @@ class LocalSileroTTS:
                 # PyTorch only allows this before its inter-op pool is initialized.
                 pass
 
-            self.log("Загружаю локальную модель Silero v5.6 (один раз при запуске)…")
+            self.log(f"Загружаю локальную модель {self.model_label} (один раз при запуске)…")
             importer = torch.package.PackageImporter(str(self.model_path))
             model = importer.load_pickle("tts_models", "model")
             model.to(torch.device("cpu"))
-            self.model = model
 
-            # Warm up every speaker used by the UI before accepting requests.
-            # The first Xenia request otherwise pays speaker-specific setup time.
+            accentor = None
+            if self.russian_accentor_enabled:
+                self.log("Загружаю локальную расстановку русских ударений Silero…")
+                from silero_stress import load_accentor
+                accentor = load_accentor(lang="ru")
+
+            # Warm every speaker before accepting requests, so the first
+            # selected voice does not pay model or speaker initialization cost.
+            warmup_text = "Проверка локального голоса."
+            if accentor is not None:
+                warmup_text = accentor(warmup_text)
             with torch.inference_mode():
-                for speaker in ("aidar", "baya", "xenia"):
+                for speaker in self.warmup_speakers:
                     warmup_audio = model.apply_tts(
-                        text="Проверка локального голоса.",
+                        text=warmup_text,
                         speaker=speaker,
                         sample_rate=SAMPLE_RATE,
                     )
                     if warmup_audio is None or len(warmup_audio) == 0:
                         raise RuntimeError(f"Silero не прогрела голос {speaker}.")
-                    self.log(f"Голос Silero {speaker} прогрет.")
+                    self.log(f"Голос {self.model_label} {speaker} прогрет.")
+
+            self.accentor = accentor
+            self.model = model
 
     def synthesize_to_wav(self, text: str, speaker: str, target_path: str | Path) -> tuple[int, float]:
         if self.model is None:
@@ -63,8 +86,9 @@ class LocalSileroTTS:
 
         target_path = Path(target_path)
         with self._synthesis_lock, torch.inference_mode():
+            prepared_text = self.accentor(text) if self.accentor is not None else text
             audio = self.model.apply_tts(
-                text=text,
+                text=prepared_text,
                 speaker=speaker,
                 sample_rate=SAMPLE_RATE,
             )
