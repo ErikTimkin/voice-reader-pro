@@ -89,6 +89,7 @@ class StreamingPCMSource(discord.AudioSource):
         self._error = None
         self._bytes = 0
         self._frames_read = 0
+        self._underruns = 0
         # Preserve resampler state and partial Discord frames across TTS chunks.
         self._previous_sample = None
         self._pending_pcm = bytearray()
@@ -183,13 +184,29 @@ class StreamingPCMSource(discord.AudioSource):
         return self._ready.wait(timeout)
 
     def read(self):
-        frame = self._frames.get()
+        try:
+            frame = self._frames.get(timeout=0.02)
+        except queue.Empty:
+            # Do not block Discord's audio thread indefinitely if Pocket TTS
+            # pauses between chunks. A correctly sized silence frame keeps the
+            # player alive and lets stop()/cleanup remain responsive.
+            self._underruns += 1
+            if self._underruns in (1, 5, 25):
+                self.log(
+                    f"Армянский аудиопоток ждёт генерацию: пропусков буфера={self._underruns}."
+                )
+            return bytes(self.FRAME_BYTES)
         if frame is None:
             if self._error is not None:
                 raise RuntimeError(
                     f"Потоковая генерация армянского голоса завершилась с ошибкой: {self._error}"
                 ) from self._error
             return b""
+        if self._underruns:
+            self.log(
+                f"Армянский аудиобуфер восстановлен после {self._underruns} пустых кадров."
+            )
+            self._underruns = 0
         self._frames_read += 1
         return frame
 
