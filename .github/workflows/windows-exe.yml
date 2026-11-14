@@ -77,7 +77,7 @@ jobs:
         run: python tests/web_voice_ui_smoke.py
       - name: Verify DAVE 0.2 and Opus voice support
         run: python tests/dave_compat_smoke.py
-      - name: Test male, female and cute Silero voices
+      - name: Test standard Silero voices and Armenian 2.0 latency
         run: python tests/silero_voice_smoke.py
       - name: Test Jelly Bear pitch and tempo filter
         run: python tests/jelly_bear_filter_smoke.py
@@ -113,7 +113,7 @@ jobs:
           Copy-Item README.md dist/VoiceReaderPro/README.md -Force
       - name: Test voices from a relocated offline package
         run: python tests/packaged_voice_smoke.py --voices-dir dist/VoiceReaderPro/voices
-      - name: Smoke-test all five requested voices from the packaged EXE
+      - name: Smoke-test all six voices from the packaged EXE
         shell: pwsh
         run: |
           $exe = Join-Path $PWD 'dist/VoiceReaderPro/VoiceReaderPro.exe'
@@ -143,6 +143,9 @@ jobs:
           if ((Get-Item dist/VoiceReaderPro/VoiceReaderPro.exe).Length -lt 1MB) { throw 'EXE launcher is unexpectedly small' }
           if (!(Test-Path dist/VoiceReaderPro/voices/v5_6_ru.pt)) { throw 'Default/female Silero model is missing' }
           if ((Get-Item dist/VoiceReaderPro/voices/v5_6_ru.pt).Length -lt 50000000) { throw 'Silero model is incomplete' }
+          if (!(Test-Path dist/VoiceReaderPro/voices/v5_cis_base.pt)) { throw 'Armenian 2.0 Silero CIS model is missing' }
+          if ((Get-Item dist/VoiceReaderPro/voices/v5_cis_base.pt).Length -lt 50000000) { throw 'Armenian 2.0 Silero CIS model is incomplete' }
+          if (!(Test-Path dist/VoiceReaderPro/voices/SILERO_CIS_MODEL_NOTICE.txt)) { throw 'Armenian 2.0 model license notice is missing' }
           $extraFiles = @(
             'voices/armenian/armenian_tri.yaml',
             'voices/armenian/armenian_reference.wav',
