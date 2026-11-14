@@ -92,6 +92,7 @@ class StreamingPCMSource(discord.AudioSource):
         # Preserve resampler state and partial Discord frames across TTS chunks.
         self._previous_sample = None
         self._pending_pcm = bytearray()
+        self._ready = threading.Event()
 
     def _queue_pcm(self, pcm_mono):
         import numpy as np
@@ -108,6 +109,8 @@ class StreamingPCMSource(discord.AudioSource):
                 try:
                     self._frames.put(frame, timeout=0.1)
                     self._bytes += len(frame)
+                    if self._frames.qsize() >= 8:
+                        self._ready.set()
                     break
                 except queue.Full:
                     continue
@@ -147,6 +150,7 @@ class StreamingPCMSource(discord.AudioSource):
             return
         self._finished = True
         self._error = error
+        self._ready.set()
         if self.stop_event.is_set():
             # A stopped Discord player no longer drains the queue.
             while True:
@@ -173,6 +177,10 @@ class StreamingPCMSource(discord.AudioSource):
                 self._frames.put(frame)
                 self._bytes += len(frame)
         self._frames.put(None)
+
+    def wait_ready(self, timeout=4.0):
+        """Wait until a short prefill is queued, or synthesis has finished."""
+        return self._ready.wait(timeout)
 
     def read(self):
         frame = self._frames.get()
@@ -492,6 +500,11 @@ class VoiceService:
         if not text or len(text) > MAX_TEXT:
             return web.json_response({'message': 'Введите от 1 до 350 символов.'}, status=400)
         enqueued_at = time.perf_counter()
+        voice_label = VOICE_PRESETS[requested_voice]["label"]
+        self.log(
+            f"Запрос сайта: выбран голос={requested_voice} ({voice_label}); "
+            f"символов={len(text)}."
+        )
         await self.queue.put((text, requested_voice, enqueued_at))
         queue_size = self.queue.qsize()
         elapsed_ms = (time.perf_counter() - request_started) * 1000
@@ -500,7 +513,11 @@ class VoiceService:
             f'символов={len(text)}, сообщений впереди={max(0, queue_size - 1)}.'
         )
         message = 'Принято. Начинаю озвучивание.' if queue_size == 1 else f'Добавлено в очередь: {queue_size}.'
-        return web.json_response({'message': message})
+        return web.json_response({
+            'message': message,
+            'voice': requested_voice,
+            'voice_label': voice_label,
+        })
 
     async def _wait_for_voice_encryption(self, voice_client, timeout=15.0):
         """Wait for Discord DAVE key negotiation before starting voice packets."""
@@ -586,39 +603,60 @@ class VoiceService:
                 if speech_text != text:
                     self.log(f'Числа преобразованы в слова перед озвучкой: {speech_text[:180]}')
 
-                fd, file_name = tempfile.mkstemp(suffix='.wav', prefix='voice-reader-')
-                os.close(fd)
                 synth_started = time.perf_counter()
+                producer_task = None
+                source = None
 
-                # Generate the complete Armenian utterance before playback.
-                # This avoids starving Discord's real-time audio queue when
-                # Pocket TTS produces chunks slower than playback consumes them.
                 if engine == "armenian":
-                    audio_bytes, audio_duration = await asyncio.to_thread(
-                        self.armenian_tts.synthesize_to_wav,
+                    # Stream Pocket TTS into a short PCM prebuffer. This removes
+                    # the full-utterance wait while keeping enough audio queued
+                    # to avoid starting Discord playback on an empty buffer.
+                    source = StreamingPCMSource(self.log)
+                    producer_task = asyncio.create_task(asyncio.to_thread(
+                        self.armenian_tts.stream_to_source,
                         speech_text,
-                        file_name,
-                    )
-                elif engine == "silero":
-                    audio_bytes, audio_duration = await asyncio.to_thread(
-                        self.local_tts.synthesize_to_wav,
-                        speech_text,
-                        profile["speaker"],
-                        file_name,
-                    )
-                elif engine == "teratts":
-                    audio_bytes, audio_duration = await asyncio.to_thread(
-                        self.pop_tts.synthesize_to_wav,
-                        speech_text,
-                        file_name,
+                        source,
+                    ))
+                    ready_for_playback = await asyncio.to_thread(source.wait_ready, 4.0)
+                    if not ready_for_playback:
+                        source.stop_event.set()
+                        try:
+                            await asyncio.wait_for(producer_task, timeout=2.0)
+                        except Exception:
+                            pass
+                        raise TimeoutError("Pocket TTS не подготовила аудиобуфер за 4 секунды.")
+                    if producer_task.done():
+                        producer_error = producer_task.exception()
+                        if producer_error:
+                            raise producer_error
+                    self.log(
+                        f"Армянский аудиобуфер готов за "
+                        f"{(time.perf_counter() - synth_started) * 1000:.0f} мс; "
+                        f"кадров в очереди={source._frames.qsize()}."
                     )
                 else:
-                    raise RuntimeError(f"Неизвестный движок озвучивания: {engine}")
-                synth_ms = (time.perf_counter() - synth_started) * 1000
-                self.log(
-                    f'Локальная модель создала звук за {synth_ms:.0f} мс: '
-                    f'{audio_duration:.2f} сек, {audio_bytes} байт.'
-                )
+                    fd, file_name = tempfile.mkstemp(suffix='.wav', prefix='voice-reader-')
+                    os.close(fd)
+                    if engine == "silero":
+                        audio_bytes, audio_duration = await asyncio.to_thread(
+                            self.local_tts.synthesize_to_wav,
+                            speech_text,
+                            profile["speaker"],
+                            file_name,
+                        )
+                    elif engine == "teratts":
+                        audio_bytes, audio_duration = await asyncio.to_thread(
+                            self.pop_tts.synthesize_to_wav,
+                            speech_text,
+                            file_name,
+                        )
+                    else:
+                        raise RuntimeError(f"Неизвестный движок озвучивания: {engine}")
+                    synth_ms = (time.perf_counter() - synth_started) * 1000
+                    self.log(
+                        f'Локальная модель создала звук за {synth_ms:.0f} мс: '
+                        f'{audio_duration:.2f} сек, {audio_bytes} байт.'
+                    )
 
                 if not self.voice_client or not self.voice_client.is_connected():
                     self.ready.clear()
@@ -715,13 +753,14 @@ class VoiceService:
                     except RuntimeError:
                         pass
 
-                source = DiagnosticFFmpegPCMAudio(
-                    file_name,
-                    executable=self.ffmpeg,
-                    logger=self.log,
-                    before_options='-nostdin',
-                    options=profile.get('ffmpeg_options', ''),
-                )
+                if engine != "armenian":
+                    source = DiagnosticFFmpegPCMAudio(
+                        file_name,
+                        executable=self.ffmpeg,
+                        logger=self.log,
+                        before_options='-nostdin',
+                        options=profile.get('ffmpeg_options', ''),
+                    )
                 try:
                     voice_client.play(source, after=playback_finished, signal_type='voice')
                 except Exception:
@@ -730,9 +769,17 @@ class VoiceService:
                     original_get_voice_packet = None
                     original_send_packet = None
                     if engine == "armenian":
-                        source.cleanup()
+                        source.stop_event.set()
                     raise
 
+                if producer_task is not None:
+                    try:
+                        await producer_task
+                    except Exception as producer_error:
+                        self.log(
+                            f"Ошибка генерации потока армянского голоса: "
+                            f"{type(producer_error).__name__}: {producer_error}"
+                        )
                 playback_error = await done
                 if playback_error:
                     self.log(
