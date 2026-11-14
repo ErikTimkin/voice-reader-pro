@@ -564,6 +564,8 @@ class VoiceService:
             voice_client = None
             original_send_packet = None
             original_get_voice_packet = None
+            producer_task = None
+            source = None
 
             try:
                 queue_wait_ms = (time.perf_counter() - enqueued_at) * 1000
@@ -794,6 +796,15 @@ class VoiceService:
                     voice_client._connection.send_packet = original_send_packet
                 self.log(f'Ошибка локального озвучивания: {type(exc).__name__}: {exc}')
             finally:
+                # Never leave a background Pocket TTS producer blocked on a
+                # full queue if Discord disconnects or DAVE negotiation fails.
+                if isinstance(source, StreamingPCMSource) and producer_task is not None:
+                    if not producer_task.done():
+                        source.stop_event.set()
+                        try:
+                            await asyncio.wait_for(producer_task, timeout=2.0)
+                        except Exception:
+                            pass
                 if file_name:
                     try:
                         Path(file_name).unlink(missing_ok=True)
