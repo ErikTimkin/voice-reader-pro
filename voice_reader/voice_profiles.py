@@ -33,6 +33,12 @@ VOICE_PRESETS = {
         "engine": "armenian",
         "ffmpeg_options": "-af volume=1.1",
     },
+    "armenian2": {
+        "label": "Армянский 2.0",
+        "engine": "silero_cis",
+        "speaker": "ru_hye_zara",
+        "ffmpeg_options": "-af volume=1.15",
+    },
 }
 
 VOICE_PRESET_LABELS = {key: value["label"] for key, value in VOICE_PRESETS.items()}
