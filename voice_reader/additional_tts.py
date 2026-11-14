@@ -152,8 +152,10 @@ def normalize_russian_for_pocket_tts(text: str) -> str:
     before this function; here we canonicalize Unicode, punctuation and
     whitespace so the SentencePiece tokenizer sees the expected Russian text.
     """
-    value = unicodedata.normalize("NFC", str(text or ""))
-    value = value.replace("ё", "ё").replace("Ё", "Ё")
+    # The tri_v1 checkpoint was trained with its Russian normalise_ru()
+    # pipeline. Its text stream is lowercase; passing title-case raw input
+    # changes SentencePiece tokenization and can severely degrade speech.
+    value = unicodedata.normalize("NFC", str(text or "")).lower()
     value = value.translate(str.maketrans({
         "—": "-", "–": "-", "−": "-",
         "“": '"', "”": '"', "„": '"',
@@ -187,10 +189,11 @@ def _write_armenian_wav(audio, sample_rate: int, target_path: str | Path, logger
             f"robust_peak={robust_peak:.8f})."
         )
 
-    # Do not normalize tiny model output all the way to full scale: the old
-    # peak-only normalization could turn a low-level artifact into loud noise.
-    gain = min(0.65 / robust_peak, 256.0)
-    normalized = np.clip(samples * gain, -0.90, 0.90).astype(np.float32)
+    # Normalize against the true peak, not the 99.5th percentile. The
+    # percentile-based gain let rare transients hit the limiter repeatedly,
+    # creating harsh percussive distortion in the generated speech.
+    gain = min(0.70 / raw_peak, 256.0)
+    normalized = (samples * gain).astype(np.float32)
     output_peak = float(np.max(np.abs(normalized)))
     clipping_ratio = float(np.mean(np.abs(normalized) >= 0.899))
 
