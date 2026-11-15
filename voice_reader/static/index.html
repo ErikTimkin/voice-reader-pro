@@ -103,6 +103,21 @@
     .voice.jelly .voice-symbol { color:#b34a3b;background:#fff0eb; }
     .voice.cartoon .voice-symbol { color:#a04bb7;background:#fbf0ff; }
     .voice.villain .voice-symbol { color:#39445e;background:#eef1f8; }
+    .voice.superhero .voice-symbol { color:#a06b1c;background:#fff6df; }
+    .voice.custom .voice-symbol { color:#287d6b;background:#e9f8f3; }
+    .custom-panel {
+      margin:-13px 0 27px;padding:19px;border:1px solid var(--line);
+      border-radius:18px;background:rgba(248,250,253,.9);
+    }
+    .custom-panel[hidden] { display:none; }
+    .custom-title { font-size:14px;font-weight:700;margin-bottom:13px; }
+    .custom-base { width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:white;color:var(--ink);font:inherit;margin-bottom:14px; }
+    .slider-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 22px; }
+    .slider-row { display:grid;grid-template-columns:1fr auto;gap:5px 10px;align-items:center; }
+    .slider-row label { font-size:12px;font-weight:650;color:var(--secondary); }
+    .slider-row output { font-size:12px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums; }
+    .slider-row input { grid-column:1 / -1;width:100%;accent-color:var(--blue); }
+    @media(max-width:680px) { .slider-grid { grid-template-columns:1fr; } }
     .selection {
       width:17px;height:17px;border:1.5px solid #c7c7cc;border-radius:50%;
       display:grid;place-items:center;color:transparent;font-size:10px;
@@ -220,6 +235,16 @@
           <span class="voice-name">Злодей</span>
           <span class="voice-desc">Глубокий басовый голос с мрачным оттенком</span>
         </button>
+        <button class="voice superhero" type="button" data-voice="superhero" aria-pressed="false">
+          <span class="voice-top"><span class="voice-symbol">🦸</span><span class="selection">✓</span></span>
+          <span class="voice-name">Супергерой</span>
+          <span class="voice-desc">Уверенный, мощный голос настоящего мачо</span>
+        </button>
+        <button class="voice custom" type="button" data-voice="custom" aria-pressed="false">
+          <span class="voice-top"><span class="voice-symbol">🎚️</span><span class="selection">✓</span></span>
+          <span class="voice-name">Свой вариант</span>
+          <span class="voice-desc">Настрой высоту, скорость, басы и тембр</span>
+        </button>
         <button class="voice armenian2" type="button" data-voice="armenian2" aria-pressed="false">
           <span class="voice-top"><span class="voice-symbol">✦</span><span class="selection">✓</span></span>
           <span class="voice-name">Армянский 2.0</span>
@@ -236,6 +261,23 @@
           <span class="voice-desc">Ещё один вариант восточной русской речи</span>
         </button>
       </div>
+
+      <section class="custom-panel" id="customPanel" hidden aria-label="Настройка собственного голоса">
+        <div class="custom-title">Собери свой голос</div>
+        <label class="section-sub" for="customBase">Основа голоса</label>
+        <select class="custom-base" id="customBase">
+          <option value="male">Мужской</option>
+          <option value="female">Женский</option>
+          <option value="cute">Мягкий / милый</option>
+        </select>
+        <div class="slider-grid">
+          <div class="slider-row"><label for="pitch">Высота голоса</label><output id="pitchValue">0%</output><input id="pitch" type="range" min="-20" max="20" value="0"></div>
+          <div class="slider-row"><label for="speed">Скорость речи</label><output id="speedValue">1.00×</output><input id="speed" type="range" min="0.75" max="1.35" step="0.05" value="1"></div>
+          <div class="slider-row"><label for="bass">Басы</label><output id="bassValue">0 dB</output><input id="bass" type="range" min="-6" max="10" value="0"></div>
+          <div class="slider-row"><label for="treble">Звонкость</label><output id="trebleValue">0 dB</output><input id="treble" type="range" min="-6" max="8" value="0"></div>
+        </div>
+        <p class="section-sub" style="margin:13px 0 0">Настройки применяются к каждому сообщению, когда выбран «Свой вариант».</p>
+      </section>
 
       <div class="heading-row">
         <div class="section-title">Сообщение</div>
@@ -272,6 +314,26 @@
     const botStatusText = document.querySelector('#botStatusText');
     const voiceCards = [...document.querySelectorAll('[data-voice]')];
     const availableVoices = new Set(voiceCards.map(card => card.dataset.voice));
+    const customPanel = document.querySelector('#customPanel');
+    const customBase = document.querySelector('#customBase');
+    const customControls = ['pitch', 'speed', 'bass', 'treble'];
+    const customVoiceSettings = () => ({
+      base: customBase.value,
+      pitch: Number(document.querySelector('#pitch').value),
+      speed: Number(document.querySelector('#speed').value),
+      bass: Number(document.querySelector('#bass').value),
+      treble: Number(document.querySelector('#treble').value)
+    });
+    for (const key of customControls) {
+      const control = document.querySelector('#' + key);
+      const output = document.querySelector('#' + key + 'Value');
+      const update = () => {
+        const suffix = key === 'pitch' ? '%' : key === 'speed' ? '×' : ' dB';
+        output.textContent = (key === 'speed' ? Number(control.value).toFixed(2) : control.value) + suffix;
+      };
+      control.addEventListener('input', update);
+      update();
+    }
     let selectedVoice = '__DEFAULT_VOICE__';
     try {
       const savedVoice = localStorage.getItem('voiceReaderSelectedVoice');
@@ -323,7 +385,10 @@
         item.classList.toggle('selected', active);
         item.setAttribute('aria-pressed', String(active));
       }
-      setNotice('Выбран голос: ' + card.querySelector('.voice-name').textContent + '.');
+      customPanel.hidden = selectedVoice !== 'custom';
+      setNotice(selectedVoice === 'custom'
+        ? 'Настрой параметры своего голоса ниже.'
+        : 'Выбран голос: ' + card.querySelector('.voice-name').textContent + '.');
     }
 
     for (const card of voiceCards) card.addEventListener('click', () => selectVoice(card));
@@ -349,7 +414,11 @@
         const response = await fetch('/api/speak', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({text: text, voice: voice})
+          body: JSON.stringify({
+            text: text,
+            voice: voice,
+            custom_voice: voice === 'custom' ? customVoiceSettings() : null
+          })
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.message || ('Ошибка сервера: ' + response.status));
