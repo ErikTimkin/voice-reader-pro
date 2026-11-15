@@ -104,7 +104,7 @@ class App:
         self.start = ttk.Button(home_content, text='▶  Запустить бота',
                                 style='Primary.TButton', command=self.start_service)
         self.start.pack(fill='x', padx=55, pady=(0, 22))
-        ttk.Button(home_content, text='⚙  Сервер и настройки',
+        ttk.Button(home_content, text='⚙  Сервер',
                    style='Secondary.TButton', command=lambda: notebook.select(server_tab)).pack()
         ttk.Label(home_content, textvariable=self.service_states['discord'],
                   style='Subtitle.TLabel').pack(pady=(24, 0))
