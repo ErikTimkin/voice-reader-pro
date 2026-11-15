@@ -55,7 +55,7 @@ async def main_async() -> None:
     armenian2 = LocalSileroTTS(
         cis_model_path,
         lambda _message: None,
-        warmup_speakers=("ru_zara",),
+        warmup_speakers=("ru_safarhuja",),
         model_label="Silero v5 CIS Base",
         russian_accentor=True,
     )
@@ -70,7 +70,7 @@ async def main_async() -> None:
         size, duration = await asyncio.to_thread(
             armenian2.synthesize_to_wav,
             sample_text,
-            "ru_zara",
+            "ru_safarhuja",
             target,
         )
         elapsed = time.perf_counter() - started
@@ -90,7 +90,7 @@ async def main_async() -> None:
     target.unlink(missing_ok=True)
     print(
         f"Standard Silero (aidar) median RTF={baseline_rtf:.2f}; "
-        f"Armenian 2.0 (ru_zara) median RTF={rtf:.2f}; "
+        f"Armenian 2.0 (ru_safarhuja) median RTF={rtf:.2f}; "
         f"model load + warmup={load_elapsed:.2f}s; WAV={size} bytes."
     )
 
