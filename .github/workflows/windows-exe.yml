@@ -2,7 +2,7 @@ name: Build Windows EXE
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, feature/live-voice-changer-isolated, feature/live-voice-changer]
 permissions:
   contents: read
 jobs:
@@ -61,6 +61,8 @@ jobs:
         run: python tools/prepare_additional_voices.py --voices-dir voices --ffmpeg tools/ffmpeg.exe
       - name: Check source
         run: python -m compileall -q voice_reader tests
+      - name: Test live voice DSP presets
+        run: python tests/live_audio_smoke.py
       - name: Test Russian number pronunciation
         run: python tests/number_normalizer_smoke.py
       - name: Test web voice selector and Enter behavior
@@ -77,6 +79,24 @@ jobs:
         run: python tests/voice_pipeline_smoke.py
       - name: Build EXE
         run: pyinstaller --noconfirm --clean build.spec
+      - name: Smoke-test original text UI in packaged EXE
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD 'dist/VoiceReaderPro/VoiceReaderPro.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--ui-smoke-test') -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) { throw "Text UI smoke test failed with exit code $($process.ExitCode)" }
+      - name: Smoke-test mode selector in packaged EXE
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD 'dist/VoiceReaderPro/VoiceReaderPro.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--launcher-smoke-test') -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) { throw "Mode selector smoke test failed with exit code $($process.ExitCode)" }
+      - name: Smoke-test live voice UI and DSP in packaged EXE
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD 'dist/VoiceReaderPro/VoiceReaderPro.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--live-ui-smoke-test') -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) { throw "Live voice UI smoke test failed with exit code $($process.ExitCode)" }
       - name: Prepare offline voice folder
         shell: pwsh
         run: |
