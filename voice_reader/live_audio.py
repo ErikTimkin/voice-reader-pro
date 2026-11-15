@@ -172,26 +172,30 @@ class LiveVoiceEngine:
             raise
         self._stream = stream
 
+    def process_block(self, audio):
+        """Process one mono float32 block; exposed for deterministic DSP tests."""
+        np, _, _ = _audio_libraries()
+        with self._lock:
+            board = self._board
+        if board is None:
+            self.configure(self._preset, self._settings)
+            with self._lock:
+                board = self._board
+        samples = np.asarray(audio, dtype="float32").reshape(1, -1)
+        processed = board(samples, self._sample_rate, reset=False)
+        processed = np.asarray(processed, dtype="float32").reshape(-1)
+        if processed.size != samples.shape[1]:
+            if processed.size > samples.shape[1]:
+                processed = processed[:samples.shape[1]]
+            else:
+                processed = np.pad(processed, (0, samples.shape[1] - processed.size))
+        return np.clip(processed, -1.0, 1.0)
+
     def _callback(self, indata, outdata, frames, time_info, status) -> None:
         if status:
             self.last_status = str(status)
         try:
-            with self._lock:
-                board = self._board
-            if board is None:
-                outdata.fill(0)
-                return
-            audio = indata[:, 0].astype("float32", copy=False).reshape(1, -1)
-            processed = board(audio, self._sample_rate, reset=False)
-            processed = self._np.asarray(processed, dtype="float32").reshape(-1)
-            if processed.size != frames:
-                # Defensive length correction; normal Pedalboard processing is
-                # frame preserving for these effects.
-                if processed.size > frames:
-                    processed = processed[:frames]
-                else:
-                    processed = self._np.pad(processed, (0, frames - processed.size))
-            outdata[:, 0] = self._np.clip(processed, -1.0, 1.0)
+            outdata[:, 0] = self.process_block(indata[:, 0])
         except Exception as exc:
             self.last_error = f"{type(exc).__name__}: {exc}"
             outdata.fill(0)
