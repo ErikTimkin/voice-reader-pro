@@ -200,6 +200,13 @@ class App:
         CONFIG.write_text(json.dumps(settings, ensure_ascii=False, indent=2), 'utf-8')
         keyring.set_password(APP_NAME, TOKEN_KEY, self.fields['token'].get().strip())
 
+    def save_settings(self):
+        try:
+            self.save()
+            messagebox.showinfo(APP_NAME, 'Настройки сервера сохранены.')
+        except Exception as exc:
+            messagebox.showerror(APP_NAME, f'Не удалось сохранить настройки: {exc}')
+
     def emit(self, msg):
         self.events.put(('log', msg))
 
@@ -223,8 +230,7 @@ class App:
                     self.log.insert('end', f'ОШИБКА ЗАПУСКА: {msg}\n')
                     self.log.see('end')
                     messagebox.showerror(APP_NAME, msg)
-                    self.start.configure(state='normal')
-                    self.stop.configure(state='disabled')
+                    self.start.configure(text='▶  Запустить бота', command=self.start_service, state='normal')
         except queue.Empty:
             pass
         self.root.after(200, self.drain)
@@ -261,8 +267,7 @@ class App:
         for key in self.service_states:
             self.service_states[key].set('Запуск…')
         self.link.delete(0, 'end')
-        self.start.configure(state='disabled')
-        self.stop.configure(state='normal')
+        self.start.configure(text='■  Остановить бота', command=self.stop_service, state='normal')
         self.status.set('Запуск…')
         self.thread = threading.Thread(
             target=self.run,
@@ -472,8 +477,7 @@ class App:
         self.status.set('Остановлено')
         for key in self.service_states:
             self.service_states[key].set('Остановлен')
-        self.start.configure(state='normal')
-        self.stop.configure(state='disabled')
+        self.start.configure(text='▶  Запустить бота', command=self.start_service, state='normal')
 
     def copy(self):
         self.root.clipboard_clear()
