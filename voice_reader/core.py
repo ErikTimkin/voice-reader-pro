@@ -11,7 +11,7 @@ from pathlib import Path
 import aiohttp
 from aiohttp import web
 import discord
-from voice_reader.voice_profiles import (VOICE_PRESETS, LEGACY_VOICE_IDS, resolve_voice_profile)
+from voice_reader.voice_profiles import (VOICE_PRESETS, LEGACY_VOICE_IDS, resolve_voice_profile, build_custom_voice_profile)
 from voice_reader.local_tts import LocalSileroTTS
 from voice_reader.additional_tts import TeraPopTTS
 from voice_reader.number_normalizer import normalize_numbers_for_speech
@@ -385,6 +385,9 @@ class VoiceService:
                 raise ValueError("Expected JSON object")
             text = payload.get('text', '')
             requested_voice = normalize_voice_key(payload.get('voice'), self.voice)
+            custom_voice = payload.get('custom_voice') if requested_voice == "custom" else None
+            if custom_voice is not None and not isinstance(custom_voice, dict):
+                raise ValueError("Настройки своего голоса должны быть объектом.")
         except ValueError as exc:
             return web.json_response({'message': str(exc) or 'Некорректный запрос.'}, status=400)
         except Exception:
@@ -399,7 +402,7 @@ class VoiceService:
             f"Запрос сайта: выбран голос={requested_voice} ({voice_label}); "
             f"символов={len(text)}."
         )
-        await self.queue.put((text, requested_voice, enqueued_at))
+        await self.queue.put((text, requested_voice, enqueued_at, custom_voice))
         queue_size = self.queue.qsize()
         elapsed_ms = (time.perf_counter() - request_started) * 1000
         self.log(
@@ -445,7 +448,10 @@ class VoiceService:
     async def play_worker(self):
         while True:
             item = await self.queue.get()
-            if isinstance(item, tuple) and len(item) == 3:
+            custom_settings = None
+            if isinstance(item, tuple) and len(item) == 4:
+                text, selected_voice, enqueued_at, custom_settings = item
+            elif isinstance(item, tuple) and len(item) == 3:
                 text, selected_voice, enqueued_at = item
             elif isinstance(item, tuple) and len(item) == 2:
                 text, enqueued_at = item
@@ -470,6 +476,8 @@ class VoiceService:
                     continue
 
                 profile = resolve_voice_profile(selected_voice)
+                if selected_voice == "custom":
+                    profile["speaker"], profile["ffmpeg_options"] = build_custom_voice_profile(custom_settings)
                 speech_text = normalize_numbers_for_speech(text)
                 engine = profile.get("engine", "silero")
 
