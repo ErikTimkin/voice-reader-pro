@@ -79,7 +79,7 @@ async def main_async(source_voices: Path) -> None:
         silero_cis = LocalSileroTTS(
             relocated_model,
             lambda _message: None,
-            warmup_speakers=("ru_zara",),
+            warmup_speakers=("ru_safarhuja",),
             model_label="Silero v5 CIS Base",
             russian_accentor=True,
         )
@@ -88,7 +88,7 @@ async def main_async(source_voices: Path) -> None:
         await asyncio.to_thread(
             silero_cis.synthesize_to_wav,
             "Проверка русского текста с армянским тембром.",
-            "ru_zara",
+            "ru_safarhuja",
             cis_wav,
         )
         verify_wav(cis_wav)
