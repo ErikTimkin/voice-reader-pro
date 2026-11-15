@@ -206,11 +206,13 @@ class LiveVoiceEngine:
     """Full-duplex microphone processor; output can be routed to VB-CABLE."""
 
     def __init__(self) -> None:
+        import numpy as np
+
         self._lock = threading.RLock()
         self._stream = None
         self._board = None
         self._pitch_shifter = None
-        self._np = None
+        self._np = np
         self._sample_rate = SAMPLE_RATE
         self._history_capacity = max(int(SAMPLE_RATE * 0.12), 1024)
         self._input_history = np.zeros(self._history_capacity, dtype=np.float32)
