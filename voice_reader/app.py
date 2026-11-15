@@ -348,30 +348,54 @@ class App:
             while not self.stop_requested.is_set():
                 process = None
                 try:
+                    # HTTP/2 is more reliable than QUIC on networks that block UDP.
                     process = await asyncio.create_subprocess_exec(
                         cloudflared,
-                        'tunnel', '--url', 'http://127.0.0.1:8765', '--no-autoupdate',
+                        'tunnel', '--protocol', 'http2', '--url',
+                        'http://127.0.0.1:8765', '--no-autoupdate',
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.STDOUT,
                     )
                     self.service.tunnel = process
-                    self.events.put(('state', ('tunnel', 'Подключение…')))
+                    self.events.put(('url', ''))
+                    self.events.put(('state', ('tunnel', 'Получение ссылки…')))
                     retry_delay = 2
-                    self.emit('Публичный Cloudflare Tunnel запущен.')
+                    self.emit('Запущен Cloudflare Tunnel по HTTP/2. Ожидаю публичный адрес…')
+                    import re
+                    startup_deadline = asyncio.get_running_loop().time() + 60
+                    public_url = None
 
                     while not self.stop_requested.is_set():
-                        line = await process.stdout.readline()
+                        if public_url is None:
+                            remaining = startup_deadline - asyncio.get_running_loop().time()
+                            if remaining <= 0:
+                                raise TimeoutError('Cloudflare не выдал публичную ссылку за 60 секунд.')
+                            line = await asyncio.wait_for(
+                                process.stdout.readline(), timeout=remaining
+                            )
+                        else:
+                            line = await process.stdout.readline()
                         if not line:
                             break
                         decoded = line.decode(errors='replace').strip()
+                        # Cloudflared may decorate console output with ANSI colors.
+                        decoded = re.sub(r'\\x1b\\[[0-?]*[ -/]*[@-~]', '', decoded)
                         if decoded:
                             self.emit(decoded)
-                        if 'trycloudflare.com' in decoded:
-                            import re
-                            url = re.search(r'https://[^\s]+trycloudflare\.com', decoded)
-                            if url:
-                                self.events.put(('url', url.group(0)))
-                                self.events.put(('state', ('tunnel', 'Доступна')))
+                        if public_url is None:
+                            match = re.search(
+                                r'https://[a-z0-9-]+\\.trycloudflare\\.com',
+                                decoded,
+                                flags=re.IGNORECASE,
+                            )
+                            if match:
+                                public_url = match.group(0).rstrip('.,);]')
+                                self.events.put(('url', public_url))
+                                self.events.put(('state', ('tunnel', 'Ссылка получена')))
+                                self.emit(
+                                    'Публичная ссылка получена. Она действует, пока работает этот Tunnel; '
+                                    'при переподключении адрес может измениться.'
+                                )
 
                     if self.stop_requested.is_set():
                         break
