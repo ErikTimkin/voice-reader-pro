@@ -34,9 +34,21 @@ VOICE_PRESETS = {
         "ffmpeg_options": "-af volume=1.1",
     },
     "armenian2": {
-        "label": "Армянский 2.0 · восточный",
+        "label": "Армянский 2.0 · таджикский оттенок",
         "engine": "silero_cis",
         "speaker": "ru_safarhuja",
+        "ffmpeg_options": "-af volume=1.1",
+    },
+    "armenian3": {
+        "label": "Кавказский акцент",
+        "engine": "silero_cis",
+        "speaker": "ru_eduard",
+        "ffmpeg_options": "-af volume=1.1",
+    },
+    "armenian4": {
+        "label": "Татарский оттенок",
+        "engine": "silero_cis",
+        "speaker": "ru_marat",
         "ffmpeg_options": "-af volume=1.1",
     },
 }
