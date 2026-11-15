@@ -67,13 +67,11 @@ jobs:
           Copy-Item licenses/SILERO_CIS_MODEL_NOTICE.txt voices/SILERO_CIS_MODEL_NOTICE.txt
           Write-Host "Downloaded Russian Silero model: $ruSize bytes"
           Write-Host "Downloaded Silero CIS Armenian-accent model: $cisSize bytes"
-      - name: Download and prepare additional offline voices
-        run: python tools/prepare_additional_voices.py --voices-dir voices --ffmpeg tools/ffmpeg.exe
       - name: Check source
         run: python -m compileall -q voice_reader tests
       - name: Test Russian number pronunciation
         run: python tests/number_normalizer_smoke.py
-      - name: Test eight voice selector options and Enter behavior
+      - name: Test seven voice selector options and Enter behavior
         run: python tests/web_voice_ui_smoke.py
       - name: Verify DAVE 0.2 and Opus voice support
         run: python tests/dave_compat_smoke.py
@@ -83,12 +81,6 @@ jobs:
         run: python tests/jelly_bear_filter_smoke.py
       - name: Test additional voice WAV level normalization
         run: python tests/audio_export_smoke.py
-      - name: Test Armenian TTS Russian text normalization
-        run: python tests/armenian_text_smoke.py
-      - name: Test Armenian streaming PCM output
-        run: python tests/armenian_stream_smoke.py
-      - name: Test Armenian accent voice
-        run: python tests/additional_voice_smoke.py
       - name: Smoke-test PCM playback path
         run: python tests/voice_pipeline_smoke.py
       - name: Build EXE
@@ -107,9 +99,6 @@ jobs:
           Copy-Item voices/v5_cis_base.pt dist/VoiceReaderPro/voices/v5_cis_base.pt -Force
           Copy-Item voices/SILERO_MODEL_NOTICE.txt dist/VoiceReaderPro/voices/SILERO_MODEL_NOTICE.txt -Force
           Copy-Item voices/SILERO_CIS_MODEL_NOTICE.txt dist/VoiceReaderPro/voices/SILERO_CIS_MODEL_NOTICE.txt -Force
-          New-Item -ItemType Directory -Force dist/VoiceReaderPro/voices/armenian | Out-Null
-          Copy-Item -Path voices/armenian/* -Destination dist/VoiceReaderPro/voices/armenian -Recurse -Force
-
           Copy-Item README.md dist/VoiceReaderPro/README.md -Force
       - name: Test voices from a relocated offline package
         run: python tests/packaged_voice_smoke.py --voices-dir dist/VoiceReaderPro/voices
@@ -117,7 +106,7 @@ jobs:
         shell: pwsh
         run: |
           $exe = Join-Path $PWD 'dist/VoiceReaderPro/VoiceReaderPro.exe'
-          foreach ($voice in @('normal', 'female', 'cute_girl', 'armenian', 'armenian2', 'armenian3', 'armenian4', 'jelly_bear')) {
+          foreach ($voice in @('normal', 'female', 'cute_girl', 'armenian2', 'armenian3', 'armenian4', 'jelly_bear')) {
             $logPath = Join-Path $env:TEMP "VoiceReaderPro-smoke-$voice.log"
             Remove-Item $logPath -Force -ErrorAction SilentlyContinue
             Write-Host "Testing packaged EXE voice: $voice"
@@ -146,18 +135,6 @@ jobs:
           if (!(Test-Path dist/VoiceReaderPro/voices/v5_cis_base.pt)) { throw 'Armenian 2.0 Silero CIS model is missing' }
           if ((Get-Item dist/VoiceReaderPro/voices/v5_cis_base.pt).Length -lt 50000000) { throw 'Armenian 2.0 Silero CIS model is incomplete' }
           if (!(Test-Path dist/VoiceReaderPro/voices/SILERO_CIS_MODEL_NOTICE.txt)) { throw 'Armenian 2.0 model license notice is missing' }
-          $extraFiles = @(
-            'voices/armenian/armenian_tri.yaml',
-            'voices/armenian/armenian_reference.wav',
-            'voices/armenian/armenian_voice_state.safetensors',
-            'voices/armenian/tri_v1/model.safetensors',
-            'voices/armenian/tri_v1/tokenizer_tri.model'
-          )
-          foreach ($relative in $extraFiles) {
-            if (!(Test-Path (Join-Path 'dist/VoiceReaderPro' $relative))) {
-              throw "Additional voice package is missing: $relative"
-            }
-          }
       - uses: actions/upload-artifact@v4
         with:
           name: VoiceReaderPro-Offline-Windows
