@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,7 +15,10 @@ async def main_async() -> None:
         raise SystemExit(f"Silero model not found: {model_path}")
 
     tts = LocalSileroTTS(model_path, lambda _message: None)
+    load_started = time.perf_counter()
     await asyncio.to_thread(tts.load)
+    load_ms = (time.perf_counter() - load_started) * 1000.0
+    print(f"Silero model load: {load_ms:.0f}ms")
 
     expected = {
         "normal": "aidar",
@@ -27,18 +31,24 @@ async def main_async() -> None:
             raise AssertionError(f"{preset}: expected {expected_speaker}, got {profile}")
 
         output = ROOT / "tests" / f"silero-{preset}.wav"
+        synthesis_started = time.perf_counter()
         size, duration = await asyncio.to_thread(
             tts.synthesize_to_wav,
             "Привет! Это проверка локального русского голоса.",
             profile["speaker"],
             output,
         )
+        synthesis_ms = (time.perf_counter() - synthesis_started) * 1000.0
         if size < 2048 or duration < 0.25:
             raise AssertionError(
                 f"{preset}: suspicious audio output size={size}, duration={duration}"
             )
         output.unlink(missing_ok=True)
-        print(f"{preset}: speaker={expected_speaker}, {duration:.2f}s, {size} bytes")
+        rtf = synthesis_ms / max(duration * 1000.0, 1.0)
+        print(
+            f"{preset}: speaker={expected_speaker}, synthesis={synthesis_ms:.0f}ms, "
+            f"audio={duration:.2f}s, RTF={rtf:.3f}, {size} bytes"
+        )
 
     # Confirm that model inference does not starve the asyncio loop.
     samples = []

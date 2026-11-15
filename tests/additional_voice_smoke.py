@@ -1,5 +1,6 @@
 import asyncio
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -8,7 +9,7 @@ sys.path.insert(0, str(ROOT))
 from voice_reader.additional_tts import TeraTTS
 
 
-def check_wav(path: Path, minimum_size: int = 5000, minimum_duration: float = 0.5) -> None:
+def check_wav(path: Path, minimum_size: int = 5000, minimum_duration: float = 0.5) -> float:
     import wave
 
     if not path.is_file() or path.stat().st_size < minimum_size:
@@ -18,6 +19,7 @@ def check_wav(path: Path, minimum_size: int = 5000, minimum_duration: float = 0.
         if duration < minimum_duration:
             raise AssertionError(f"Generated WAV is too short ({duration:.2f}s): {path}")
     print(f"{path.name}: {duration:.2f}s, {path.stat().st_size} bytes")
+    return duration
 
 
 async def main_async() -> None:
@@ -26,16 +28,29 @@ async def main_async() -> None:
     tera = TeraTTS(ROOT / "voices" / "teratts", lambda _message: None)
 
     try:
+        model_load_started = time.perf_counter()
+        await asyncio.to_thread(tera.load)
+        model_load_ms = (time.perf_counter() - model_load_started) * 1000.0
+        print(f"TeraTTSv2 model load: {model_load_ms:.0f}ms")
+
         pop_path = samples / "young-pop-ru.wav"
+        pop_started = time.perf_counter()
         await asyncio.to_thread(
             tera.synthesize_to_wav,
             "Привет! Это проверка молодого мужского голоса. Сегодня отличный день!",
             pop_path,
             "ru_m5",
         )
-        check_wav(pop_path)
+        pop_synthesis_ms = (time.perf_counter() - pop_started) * 1000.0
+        pop_duration = check_wav(pop_path)
+        print(
+            f"pop: synthesis={pop_synthesis_ms:.0f}ms, RTF="
+            f"{pop_synthesis_ms / max(pop_duration * 1000.0, 1.0):.3f}, "
+            f"first_request_with_model_load={model_load_ms + pop_synthesis_ms:.0f}ms"
+        )
 
         accent_path = samples / "foreign-accent-ru.wav"
+        accent_started = time.perf_counter()
         await asyncio.to_thread(
             tera.synthesize_to_wav,
             "Брат, здравствуйте. Я уже подъехал, выходите, пожалуйста, к подъезду. "
@@ -43,7 +58,12 @@ async def main_async() -> None:
             accent_path,
             "eng_m4",
         )
-        check_wav(accent_path)
+        accent_synthesis_ms = (time.perf_counter() - accent_started) * 1000.0
+        accent_duration = check_wav(accent_path)
+        print(
+            f"accent: synthesis={accent_synthesis_ms:.0f}ms, "
+            f"RTF={accent_synthesis_ms / max(accent_duration * 1000.0, 1.0):.3f}"
+        )
     finally:
         tera.unload()
 
