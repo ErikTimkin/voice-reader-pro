@@ -379,12 +379,12 @@ class App:
                             break
                         decoded = line.decode(errors='replace').strip()
                         # Cloudflared may decorate console output with ANSI colors.
-                        decoded = re.sub(r'\\x1b\\[[0-?]*[ -/]*[@-~]', '', decoded)
+                        decoded = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', decoded)
                         if decoded:
                             self.emit(decoded)
                         if public_url is None:
                             match = re.search(
-                                r'https://[a-z0-9-]+\\.trycloudflare\\.com',
+                                r'https://[a-z0-9-]+\.trycloudflare\.com',
                                 decoded,
                                 flags=re.IGNORECASE,
                             )
