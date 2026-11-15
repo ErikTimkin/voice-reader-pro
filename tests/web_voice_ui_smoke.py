@@ -5,13 +5,13 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from voice_reader.core import normalize_voice_key
-from voice_reader.voice_profiles import VOICE_PRESETS
+from voice_reader.voice_profiles import VOICE_PRESETS, build_custom_voice_profile
 
 
 def main() -> None:
-    expected = {"normal", "female", "cute_girl", "armenian2", "armenian3", "armenian4", "jelly_bear", "cartoon", "villain"}
+    expected = {"normal", "female", "cute_girl", "armenian2", "armenian3", "armenian4", "jelly_bear", "cartoon", "villain", "superhero", "custom"}
     if set(VOICE_PRESETS) != expected:
-        raise AssertionError(f"Expected nine browser voice presets: {list(VOICE_PRESETS)}")
+        raise AssertionError(f"Expected eleven browser voice presets: {list(VOICE_PRESETS)}")
     for voice in VOICE_PRESETS:
         assert normalize_voice_key(voice) == voice
     assert normalize_voice_key("armenian") == "armenian2"
@@ -25,6 +25,14 @@ def main() -> None:
     assert VOICE_PRESETS["villain"]["speaker"] == "aidar"
     assert "asetrate=57600" in VOICE_PRESETS["cartoon"]["ffmpeg_options"]
     assert "asetrate=39360" in VOICE_PRESETS["villain"]["ffmpeg_options"]
+    assert VOICE_PRESETS["superhero"]["speaker"] == "aidar"
+    assert "bass=g=4" in VOICE_PRESETS["superhero"]["ffmpeg_options"]
+    custom_speaker, custom_filter = build_custom_voice_profile({
+        "base": "female", "pitch": 12, "speed": 1.1, "bass": 5, "treble": 2
+    })
+    assert custom_speaker == "baya"
+    assert "asetrate=53760" in custom_filter and "atempo=0.98214" in custom_filter
+    assert "bass=g=5.0" in custom_filter and "treble=g=2.0" in custom_filter
 
     page = (ROOT / "voice_reader" / "static" / "index.html").read_text(encoding="utf-8")
     for voice in expected:
@@ -32,6 +40,11 @@ def main() -> None:
             raise AssertionError(f"Missing browser voice card: {voice}")
     if 'data-voice="armenian"' in page or "Восточный мужской акцент" in page:
         raise AssertionError("Retired Pocket TTS Armenian voice is still visible")
+    for fragment in ('data-voice="superhero"', 'data-voice="custom"', 'id="customPanel"',
+                     'id="pitch"', 'id="speed"', 'id="bass"', 'id="treble"',
+                     "custom_voice: voice === 'custom' ? customVoiceSettings() : null"):
+        if fragment not in page:
+            raise AssertionError(f"Custom/superhero voice UI is missing: {fragment}")
     for fragment in ("Армянский 2.0", "Кавказский акцент", "Татарский оттенок",
                      "event.key === 'Enter'", "!event.shiftKey",
                      "localStorage.getItem('voiceReaderSelectedVoice')",
@@ -61,7 +74,7 @@ def main() -> None:
     if "self.queue = asyncio.Queue()" not in core or "self.queue.full()" in core:
         raise AssertionError("The message queue must remain unbounded")
 
-    print("Nine browser voices, three eastern-accent CIS variants, selectable logs, keep-awake refresh, and service restart supervision passed.")
+    print("Eleven browser voices, custom voice controls, three eastern-accent CIS variants, clean desktop tabs, keep-awake refresh, and service restart supervision passed.")
 
 
 if __name__ == "__main__":
