@@ -63,7 +63,7 @@ LEGACY_VOICE_IDS = {
     "dariya": "female",
     "ru-RU-DariyaNeural": "female",
     # Armenian 2.0/3/4 remain available as independent Silero CIS presets.
-  "armenian": "armenian2",
+    "armenian": "armenian2",
 }
 
 
