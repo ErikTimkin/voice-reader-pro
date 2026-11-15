@@ -56,7 +56,9 @@ def main() -> None:
     for fragment in ("def _watch_service_status", "def _refresh_system_awake",
                      "SetThreadExecutionState", "self.loop.run_until_complete(self.run_async(*args))",
                      "Перезапускаю Discord и веб-сервер", "args=(token, guild, channel, 'normal', ffmpeg, cloudflared)",
-                     "def copy_selected_log", "def clear_log"):
+                     "def copy_selected_log", "def clear_log", "notebook.add(home_tab, text='Главная')",
+                     "notebook.add(server_tab, text='Сервер')", "text='⚙  Сервер и настройки'",
+                     "text='▶  Запустить бота'"):
         if fragment not in app:
             raise AssertionError(f"Desktop runtime feature is missing: {fragment}")
     if "armenian_tri.yaml" in app or "args=(token, guild, channel, 'armenian'" in app:
