@@ -6,7 +6,7 @@ from voice_reader.live_audio import LiveVoiceEngine, PRESETS, SAMPLE_RATE
 
 def main():
     engine = LiveVoiceEngine()
-    t = np.arange(960, dtype=np.float32) / SAMPLE_RATE
+    t = np.arange(SAMPLE_RATE, dtype=np.float32) / SAMPLE_RATE
     source = (0.2 * np.sin(2 * np.pi * 220 * t)).astype(np.float32)
     for preset in PRESETS:
         engine.configure(preset)
