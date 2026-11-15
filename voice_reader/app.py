@@ -38,6 +38,7 @@ class App:
         self.thread = self.loop = self.service = None
         self.keep_awake = False
         self._keep_awake_job = None
+        self._drain_job = None
         DATA.mkdir(parents=True, exist_ok=True)
         cfg = self.load()
 
@@ -186,7 +187,7 @@ class App:
             entry.bind('<Shift-Insert>', self.paste_entry)
             entry.bind('<Button-3>', self.show_entry_menu)
 
-        root.after(200, self.drain)
+        self._drain_job = root.after(200, self.drain)
         root.protocol('WM_DELETE_WINDOW', self.close)
 
     def load(self):
@@ -241,7 +242,7 @@ class App:
                     self.start.configure(text='▶  Запустить бота', command=self.start_service, state='normal')
         except queue.Empty:
             pass
-        self.root.after(200, self.drain)
+        self._drain_job = self.root.after(200, self.drain)
 
     def start_service(self):
         # WinRAR's Open action may run an onedir build from a temporary folder,
@@ -585,6 +586,12 @@ class App:
         if self.thread and self.thread.is_alive():
             messagebox.showinfo(APP_NAME, 'Сначала останови бота и дождись завершения сервиса.')
             return
+        if self._drain_job is not None:
+            try:
+                self.root.after_cancel(self._drain_job)
+            except tk.TclError:
+                pass
+            self._drain_job = None
         if self.on_back:
             self.on_back()
 
