@@ -24,8 +24,9 @@ def tool(name):
     return str(bundled if bundled.exists() else shutil.which(name) or '')
 
 class App:
-    def __init__(self, root):
+    def __init__(self, root, on_back=None):
         self.root = root
+        self.on_back = on_back
         root.title(APP_NAME)
         root.geometry('760x650')
         root.minsize(680, 560)
@@ -79,6 +80,9 @@ class App:
         header.pack(fill='x', pady=(0, 18))
         ttk.Label(header, text='Voice Reader Pro', style='Title.TLabel').pack(anchor='w')
         ttk.Label(header, text='Голосовой помощник для Discord', style='Subtitle.TLabel').pack(anchor='w', pady=(4, 0))
+        if self.on_back:
+            ttk.Button(header, text='← Выбор режима', style='Secondary.TButton',
+                       command=self.back_to_launcher).pack(side='right', padx=(8, 0))
 
         self.status = tk.StringVar(value='Остановлено')
         ttk.Label(header, textvariable=self.status, style='Status.TLabel').pack(anchor='e', pady=(8, 0))
@@ -577,6 +581,13 @@ class App:
         event.widget = widget
         self.paste_entry(event)
 
+    def back_to_launcher(self):
+        if self.thread and self.thread.is_alive():
+            messagebox.showinfo(APP_NAME, 'Сначала останови бота и дождись завершения сервиса.')
+            return
+        if self.on_back:
+            self.on_back()
+
     def close(self):
         self.stop_service()
         self.root.destroy()
@@ -663,9 +674,97 @@ def run_frozen_ui_smoke_test() -> int:
         root.destroy()
 
 
+def run_frozen_launcher_smoke_test() -> int:
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        launcher = ModeLauncher(root)
+        root.update_idletasks()
+        if not launcher.text_button.winfo_exists() or not launcher.live_button.winfo_exists():
+            raise RuntimeError("Не созданы обе кнопки выбора режима.")
+        root.update()
+        return 0
+    finally:
+        root.destroy()
+
+
+def run_frozen_live_ui_smoke_test() -> int:
+    from voice_reader.live_voice_ui import LiveVoiceApp
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        app = LiveVoiceApp(root)
+        root.update_idletasks()
+        if not app.start_button.winfo_exists() or not app.input_combo.winfo_exists():
+            raise RuntimeError("Интерфейс голосового режима создан не полностью.")
+        root.update()
+        app.close()
+        return 0
+    except Exception:
+        root.destroy()
+        raise
+
+
+class ModeLauncher:
+    """Small mode selector; the existing text app remains a separate screen."""
+    def __init__(self, root):
+        self.root = root
+        root.title(APP_NAME)
+        root.geometry("760x560")
+        root.minsize(650, 500)
+        root.configure(bg="#090d18")
+        style = ttk.Style(root)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure("Launcher.TFrame", background="#090d18")
+        style.configure("LauncherTitle.TLabel", background="#090d18", foreground="#edf2ff",
+                        font=("Segoe UI", 25, "bold"))
+        style.configure("LauncherSub.TLabel", background="#090d18", foreground="#93a0b6",
+                        font=("Segoe UI", 10))
+        style.configure("LauncherCard.TButton", background="#172238", foreground="#edf2ff",
+                        font=("Segoe UI", 15, "bold"), padding=(24, 24), borderwidth=0)
+        style.map("LauncherCard.TButton", background=[("active", "#263653")])
+        outer = ttk.Frame(root, style="Launcher.TFrame", padding=36)
+        outer.pack(fill="both", expand=True)
+        ttk.Label(outer, text="Voice Reader Pro", style="LauncherTitle.TLabel").pack(pady=(52, 8))
+        ttk.Label(outer, text="Выбери режим работы", style="LauncherSub.TLabel").pack(pady=(0, 30))
+        self.text_button = ttk.Button(outer, text="▤  Текстовая озвучка",
+                                      style="LauncherCard.TButton", command=self.launch_text)
+        self.text_button.pack(fill="x", padx=35, pady=9)
+        self.live_button = ttk.Button(outer, text="〰  Голосовая озвучка",
+                                      style="LauncherCard.TButton", command=self.launch_live)
+        self.live_button.pack(fill="x", padx=35, pady=9)
+        ttk.Label(outer, text="Текстовый режим сохранён отдельно от нового голосового режима.",
+                  style="LauncherSub.TLabel").pack(pady=(22, 0))
+        root.protocol("WM_DELETE_WINDOW", root.destroy)
+
+    def _clear(self):
+        for widget in self.root.winfo_children():
+            widget.destroy()
+
+    def show(self):
+        self._clear()
+        ModeLauncher(self.root)
+
+    def launch_text(self):
+        self._clear()
+        App(self.root, on_back=self.show)
+
+    def launch_live(self):
+        self._clear()
+        from voice_reader.live_voice_ui import LiveVoiceApp
+        LiveVoiceApp(self.root, on_back=self.show)
+
+
 if __name__ == '__main__':
     if len(sys.argv) >= 3 and sys.argv[1] == '--voice-smoke-test':
         raise SystemExit(run_frozen_voice_smoke_test(sys.argv[2]))
     if len(sys.argv) >= 2 and sys.argv[1] == '--ui-smoke-test':
         raise SystemExit(run_frozen_ui_smoke_test())
-    App(tk.Tk()).root.mainloop()
+    if len(sys.argv) >= 2 and sys.argv[1] == '--launcher-smoke-test':
+        raise SystemExit(run_frozen_launcher_smoke_test())
+    if len(sys.argv) >= 2 and sys.argv[1] == '--live-ui-smoke-test':
+        raise SystemExit(run_frozen_live_ui_smoke_test())
+    ModeLauncher(tk.Tk()).root.mainloop()
