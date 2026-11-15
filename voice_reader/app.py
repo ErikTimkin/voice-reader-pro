@@ -113,9 +113,13 @@ class App:
         server_card.pack(fill='x')
         ttk.Label(server_card, text='Подключение Discord', style='CardTitle.TLabel').pack(anchor='w', pady=(0, 16))
         self.fields = {}
+        fields_grid = ttk.Frame(server_card, style='Card.TFrame')
+        fields_grid.pack(fill='x')
+        fields_grid.columnconfigure(0, weight=1)
+        fields_grid.columnconfigure(1, weight=1)
 
-        def add_field(label, key, show='', row=0, column=0, columnspan=1):
-            cell = ttk.Frame(server_card, style='Card.TFrame')
+        def add_field(parent, label, key, show='', row=0, column=0, columnspan=1):
+            cell = ttk.Frame(parent, style='Card.TFrame')
             cell.grid(row=row, column=column, columnspan=columnspan,
                       sticky='ew', padx=(0 if column == 0 else 10, 0), pady=(0, 13))
             ttk.Label(cell, text=label, style='Field.TLabel').pack(anchor='w', pady=(0, 6))
@@ -124,13 +128,13 @@ class App:
             entry.pack(fill='x')
             self.fields[key] = entry
 
-        server_card.columnconfigure(0, weight=1)
-        server_card.columnconfigure(1, weight=1)
-        add_field('ТОКЕН DISCORD-БОТА', 'token', show='•', row=0, column=0, columnspan=2)
-        add_field('ID СЕРВЕРА', 'guild_id', row=1, column=0)
-        add_field('ID ГОЛОСОВОГО КАНАЛА', 'channel_id', row=1, column=1)
-        ttk.Button(server_card, text='Сохранить настройки', style='Secondary.TButton',
-                   command=self.save_settings).grid(row=2, column=0, sticky='w', pady=(2, 0))
+        add_field(fields_grid, 'ТОКЕН DISCORD-БОТА', 'token', show='•', row=0, column=0, columnspan=2)
+        add_field(fields_grid, 'ID СЕРВЕРА', 'guild_id', row=1, column=0)
+        add_field(fields_grid, 'ID ГОЛОСОВОГО КАНАЛА', 'channel_id', row=1, column=1)
+        save_row = ttk.Frame(server_card, style='Card.TFrame')
+        save_row.pack(fill='x', pady=(2, 0))
+        ttk.Button(save_row, text='Сохранить настройки', style='Secondary.TButton',
+                   command=self.save_settings).pack(anchor='w')
 
         status_card = ttk.Frame(server_tab, style='Card.TFrame', padding=16)
         status_card.pack(fill='x', pady=(12, 0))
