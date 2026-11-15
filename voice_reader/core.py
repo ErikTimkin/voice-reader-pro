@@ -229,7 +229,7 @@ class VoiceService:
         self.armenian2_tts = LocalSileroTTS(
             voice_assets / "v5_cis_base.pt",
             logger,
-            warmup_speakers=("ru_safarhuja",),
+            warmup_speakers=("ru_safarhuja", "ru_eduard", "ru_marat"),
             model_label="Silero v5 CIS Base",
             russian_accentor=True,
         )
@@ -405,8 +405,8 @@ class VoiceService:
             await asyncio.to_thread(self.armenian2_tts.load)
             elapsed = (time.perf_counter() - started) * 1000
             self.log(
-                f"Армянский 2.0 (Silero ru_safarhuja) готов за {elapsed:.0f} мс. "
-                "Модель и русские ударения прогреты заранее."
+                f"Восточные голоса Silero CIS (ru_safarhuja, ru_eduard, ru_marat) "
+                f"готовы за {elapsed:.0f} мс. Модель и русские ударения прогреты заранее."
             )
         except asyncio.CancelledError:
             raise
