@@ -73,6 +73,21 @@ class GranularPitchShifter:
         fraction = position - index_a
         return float((1.0 - fraction) * self.buffer[index_a] + fraction * self.buffer[index_b])
 
+    def prime(self, history) -> None:
+        """Seed the delay line from recent raw microphone samples during effect changes."""
+        np = self._np
+        samples = np.ascontiguousarray(history, dtype=np.float32).reshape(-1)
+        self.buffer.fill(0.0)
+        if samples.size:
+            samples = samples[-self.buffer_size:]
+            self.buffer[-samples.size:] = samples
+        # The next input sample is written at index 0; the buffer tail holds
+        # the most recent history so switching presets does not restart silent.
+        self.write_pos = 0
+        self.read_a = (self.write_pos - self.fade_length) % self.buffer_size
+        self.read_b = float(self.write_pos)
+        self.phase = 0.0
+
     def process_block(self, audio):
         """Process a mono float32 chunk; input chunk length may change per call."""
         np = self._np
@@ -197,6 +212,10 @@ class LiveVoiceEngine:
         self._pitch_shifter = None
         self._np = None
         self._sample_rate = SAMPLE_RATE
+        self._history_capacity = max(int(SAMPLE_RATE * 0.12), 1024)
+        self._input_history = np.zeros(self._history_capacity, dtype=np.float32)
+        self._history_write = 0
+        self._history_count = 0
         self._settings = dict(PRESETS["Обычный"])
         self._preset = "Обычный"
         self.last_error: str | None = None
@@ -240,6 +259,25 @@ class LiveVoiceEngine:
         semitones = float(settings.get("pitch", 0.0))
         return GranularPitchShifter(sample_rate, semitones) if abs(semitones) >= 0.1 else None
 
+    def _history_snapshot_locked(self):
+        if self._history_count <= 0:
+            return self._input_history[:0].copy()
+        start = (self._history_write - self._history_count) % self._history_capacity
+        indices = (start + self._np.arange(self._history_count)) % self._history_capacity
+        return self._input_history[indices].copy()
+
+    def _remember_input_locked(self, samples) -> None:
+        count = int(samples.size)
+        if count >= self._history_capacity:
+            self._input_history[:] = samples[-self._history_capacity:]
+            self._history_write = 0
+            self._history_count = self._history_capacity
+            return
+        indices = (self._history_write + self._np.arange(count)) % self._history_capacity
+        self._input_history[indices] = samples
+        self._history_write = (self._history_write + count) % self._history_capacity
+        self._history_count = min(self._history_capacity, self._history_count + count)
+
     def configure(self, preset: str, settings: dict[str, Any] | None = None) -> None:
         if preset not in PRESETS:
             raise ValueError(f"Неизвестный пресет: {preset}")
@@ -251,6 +289,8 @@ class LiveVoiceEngine:
         next_board = self._make_board(next_settings)
         next_pitch_shifter = self._make_pitch_shifter(next_settings, self._sample_rate)
         with self._lock:
+            if next_pitch_shifter is not None:
+                next_pitch_shifter.prime(self._history_snapshot_locked())
             self._settings = next_settings
             self._preset = preset
             self._board = next_board
@@ -278,6 +318,10 @@ class LiveVoiceEngine:
         with self._lock:
             if selected_rate != self._sample_rate:
                 self._sample_rate = selected_rate
+                self._history_capacity = max(int(selected_rate * 0.12), 1024)
+                self._input_history = np.zeros(self._history_capacity, dtype=np.float32)
+                self._history_write = 0
+                self._history_count = 0
                 self._pitch_shifter = self._make_pitch_shifter(self._settings, selected_rate)
 
         stream = sd.Stream(
@@ -301,16 +345,16 @@ class LiveVoiceEngine:
         np = self._np
         if np is None:
             np, _, _ = _audio_libraries()
+        samples = np.asarray(audio, dtype="float32").reshape(-1)
         with self._lock:
             board = self._board
             pitch_shifter = self._pitch_shifter
+            self._remember_input_locked(samples)
         if board is None:
             self.configure(self._preset, self._settings)
             with self._lock:
                 board = self._board
                 pitch_shifter = self._pitch_shifter
-
-        samples = np.asarray(audio, dtype="float32").reshape(-1)
         if pitch_shifter is not None:
             samples = pitch_shifter.process_block(samples)
         processed = board(samples.reshape(1, -1), self._sample_rate, reset=False)
