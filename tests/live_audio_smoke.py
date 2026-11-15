@@ -71,7 +71,10 @@ def main() -> None:
     engine = LiveVoiceEngine()
     try:
         engine.configure("Низкий")
-        low = engine.process_block(source[:BLOCK_SIZE])
+        # Fill the 120 ms delay line as a live microphone would before the
+        # user changes the selected effect.
+        for offset in range(0, sample_rate // 4, BLOCK_SIZE):
+            engine.process_block(source[offset:offset + BLOCK_SIZE])
         engine.configure("Высокий")
         high = engine.process_block(source[:BLOCK_SIZE])
         assert np.isfinite(low).all() and np.isfinite(high).all()
