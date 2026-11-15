@@ -15,7 +15,7 @@ from aiohttp import web
 import discord
 from voice_reader.voice_profiles import (VOICE_PRESETS, LEGACY_VOICE_IDS, resolve_voice_profile)
 from voice_reader.local_tts import LocalSileroTTS
-from voice_reader.additional_tts import ArmenianAccentTTS, TeraPopTTS
+from voice_reader.additional_tts import TeraPopTTS
 from voice_reader.number_normalizer import normalize_numbers_for_speech
 
 MAX_TEXT = 350
@@ -233,19 +233,16 @@ class VoiceService:
             model_label="Silero v5 CIS Base",
             russian_accentor=True,
         )
-        self.armenian_tts = ArmenianAccentTTS(voice_assets / "armenian", logger)
         self.pop_tts = TeraPopTTS(voice_assets / "teratts", logger)
         self.tts_ready = asyncio.Event()
         self.tts_error = None
-        self.armenian_ready = asyncio.Event()
-        self.armenian_error = None
         self.armenian2_ready = asyncio.Event()
         self.armenian2_error = None
          # Unbounded FIFO: users can submit repeatedly without per-minute throttling.
         self.queue = asyncio.Queue()
         self.client = discord.Client(intents=discord.Intents(guilds=True, voice_states=True))
         self.runner = self.site = self.tunnel = self.worker = self.discord_task = self.start_watchdog = None
-        self.tts_load_task = self.armenian_load_task = self.armenian2_load_task = None
+        self.tts_load_task = self.armenian2_load_task = None
         self.loop_watchdog_task = self.voice_watchdog_task = None
         self.voice_client = None
         self.ready = asyncio.Event()
@@ -353,7 +350,6 @@ class VoiceService:
         await self.site.start()
         self.worker = asyncio.create_task(self.play_worker())
         self.tts_load_task = asyncio.create_task(self._load_local_tts())
-        self.armenian_load_task = asyncio.create_task(self._preload_armenian_tts())
         # Start the Silero CIS model loader as well: armenian2/3/4 presets
         # wait on armenian2_ready, so leaving this task unscheduled stalls the
         # FIFO playback worker and every message behind the first CIS voice.
@@ -377,29 +373,6 @@ class VoiceService:
             self.log(f'Не удалось загрузить локальную модель голоса: {self.tts_error}')
         finally:
             self.tts_ready.set()
-
-    async def _preload_armenian_tts(self):
-        """Load the Armenian-accent model before its first request, off the Discord loop."""
-        try:
-            # Pocket TTS is an independent engine: never wait for Silero and
-            # never skip Armenian initialization because Silero failed.
-            # Keep the short delay only to let Discord finish connecting.
-            await asyncio.sleep(2)
-            started = time.perf_counter()
-            await asyncio.to_thread(self.armenian_tts.load)
-            elapsed = (time.perf_counter() - started) * 1000
-            self.log(
-                f"Армянская модель заранее загружена за {elapsed:.0f} мс. "
-                "Первое сообщение не будет ждать загрузку весов и подготовку тембра."
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            # Keep the other voices available if this optional model fails to load.
-            self.armenian_error = f"{type(exc).__name__}: {exc}"
-            self.log(f"Не удалось заранее загрузить армянский голос: {self.armenian_error}")
-        finally:
-            self.armenian_ready.set()
 
     async def _preload_armenian2_tts(self):
         """Load the Silero CIS Armenian-accent speaker without blocking Discord."""
@@ -631,7 +604,7 @@ class VoiceService:
 
                 profile = resolve_voice_profile(selected_voice)
                 speech_text = normalize_numbers_for_speech(text)
-                engine = profile.get("engine", "armenian")
+                engine = profile.get("engine", "silero")
 
                 # Each engine has its own readiness and error state. A failed
                 # Silero load must not disable the independent Armenian model.
@@ -644,15 +617,6 @@ class VoiceService:
                     if self.tts_error:
                         raise RuntimeError(f'Ошибка загрузки Silero: {self.tts_error}')
                     self.log(f'Модель для голоса «{profile["label"]}» готова.')
-                elif engine == "armenian":
-                    self.log(f'Ожидаю готовности Pocket TTS для голоса «{profile["label"]}»…')
-                    try:
-                        await asyncio.wait_for(self.armenian_ready.wait(), timeout=240)
-                    except asyncio.TimeoutError:
-                        raise TimeoutError("Pocket TTS не завершила загрузку за 240 секунд.")
-                    if self.armenian_error:
-                        raise RuntimeError(f'Ошибка загрузки Pocket TTS: {self.armenian_error}')
-                    self.log(f'Pocket TTS для голоса «{profile["label"]}» готова.')
                 elif engine == "silero_cis":
                     self.log(f'Ожидаю готовности Silero CIS для голоса «{profile["label"]}»…')
                     try:
@@ -673,33 +637,6 @@ class VoiceService:
                 producer_task = None
                 source = None
 
-                if engine == "armenian":
-                    # Stream Pocket TTS into a short PCM prebuffer. This removes
-                    # the full-utterance wait while keeping enough audio queued
-                    # to avoid starting Discord playback on an empty buffer.
-                    source = StreamingPCMSource(self.log)
-                    producer_task = asyncio.create_task(asyncio.to_thread(
-                        self.armenian_tts.stream_to_source,
-                        speech_text,
-                        source,
-                    ))
-                    ready_for_playback = await asyncio.to_thread(source.wait_ready, 4.0)
-                    if not ready_for_playback:
-                        source.stop_event.set()
-                        try:
-                            await asyncio.wait_for(producer_task, timeout=2.0)
-                        except Exception:
-                            pass
-                        raise TimeoutError("Pocket TTS не подготовила аудиобуфер за 4 секунды.")
-                    if producer_task.done():
-                        producer_error = producer_task.exception()
-                        if producer_error:
-                            raise producer_error
-                    self.log(
-                        f"Армянский аудиобуфер готов за "
-                        f"{(time.perf_counter() - synth_started) * 1000:.0f} мс; "
-                        f"кадров в очереди={source._frames.qsize()}."
-                    )
                 else:
                     fd, file_name = tempfile.mkstemp(suffix='.wav', prefix='voice-reader-')
                     os.close(fd)
@@ -820,8 +757,7 @@ class VoiceService:
                     except RuntimeError:
                         pass
 
-                if engine != "armenian":
-                    source = DiagnosticFFmpegPCMAudio(
+                source = DiagnosticFFmpegPCMAudio(
                         file_name,
                         executable=self.ffmpeg,
                         logger=self.log,
@@ -835,8 +771,6 @@ class VoiceService:
                     connection_state.send_packet = original_send_packet
                     original_get_voice_packet = None
                     original_send_packet = None
-                    if engine == "armenian":
-                        source.stop_event.set()
                     raise
 
                 if producer_task is not None:
@@ -861,15 +795,6 @@ class VoiceService:
                     voice_client._connection.send_packet = original_send_packet
                 self.log(f'Ошибка локального озвучивания: {type(exc).__name__}: {exc}')
             finally:
-                # Never leave a background Pocket TTS producer blocked on a
-                # full queue if Discord disconnects or DAVE negotiation fails.
-                if isinstance(source, StreamingPCMSource) and producer_task is not None:
-                    if not producer_task.done():
-                        source.stop_event.set()
-                        try:
-                            await asyncio.wait_for(producer_task, timeout=2.0)
-                        except Exception:
-                            pass
                 if file_name:
                     try:
                         Path(file_name).unlink(missing_ok=True)
@@ -883,7 +808,6 @@ class VoiceService:
             self.discord_task,
             self.start_watchdog,
             self.tts_load_task,
-            self.armenian_load_task,
             self.armenian2_load_task,
             self.loop_watchdog_task,
             self.voice_watchdog_task,
