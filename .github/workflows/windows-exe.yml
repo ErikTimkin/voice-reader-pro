@@ -73,11 +73,11 @@ jobs:
         run: python -m compileall -q voice_reader tests
       - name: Test Russian number pronunciation
         run: python tests/number_normalizer_smoke.py
-      - name: Test six voice selector options and Enter behavior
+      - name: Test eight voice selector options and Enter behavior
         run: python tests/web_voice_ui_smoke.py
       - name: Verify DAVE 0.2 and Opus voice support
         run: python tests/dave_compat_smoke.py
-      - name: Test standard Silero voices and Armenian 2.0 latency
+      - name: Test standard Silero voices and all eastern-accent voice latency
         run: python tests/silero_voice_smoke.py
       - name: Test Jelly Bear pitch and tempo filter
         run: python tests/jelly_bear_filter_smoke.py
@@ -113,11 +113,11 @@ jobs:
           Copy-Item README.md dist/VoiceReaderPro/README.md -Force
       - name: Test voices from a relocated offline package
         run: python tests/packaged_voice_smoke.py --voices-dir dist/VoiceReaderPro/voices
-      - name: Smoke-test all six voices from the packaged EXE
+      - name: Smoke-test all eight voices from the packaged EXE
         shell: pwsh
         run: |
           $exe = Join-Path $PWD 'dist/VoiceReaderPro/VoiceReaderPro.exe'
-          foreach ($voice in @('normal', 'female', 'cute_girl', 'armenian', 'armenian2', 'jelly_bear')) {
+          foreach ($voice in @('normal', 'female', 'cute_girl', 'armenian', 'armenian2', 'armenian3', 'armenian4', 'jelly_bear')) {
             $logPath = Join-Path $env:TEMP "VoiceReaderPro-smoke-$voice.log"
             Remove-Item $logPath -Force -ErrorAction SilentlyContinue
             Write-Host "Testing packaged EXE voice: $voice"
