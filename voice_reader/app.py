@@ -598,7 +598,7 @@ def run_frozen_voice_smoke_test(preset: str) -> int:
     import traceback
     import wave
 
-    from voice_reader.additional_tts import ArmenianAccentTTS, TeraPopTTS
+    from voice_reader.additional_tts import TeraPopTTS
     from voice_reader.local_tts import LocalSileroTTS
     from voice_reader.voice_profiles import resolve_voice_profile
 
@@ -631,11 +631,6 @@ def run_frozen_voice_smoke_test(preset: str) -> int:
             )
             tts.load()
             size, duration = tts.synthesize_to_wav(sample_text, profile["speaker"], output_path)
-            del tts
-        elif engine == "armenian":
-            tts = ArmenianAccentTTS(VOICE_ASSETS / "armenian", log)
-            size, duration = tts.synthesize_to_wav(sample_text, output_path)
-            tts.unload()
             del tts
         elif engine == "teratts":
             tts = TeraPopTTS(VOICE_ASSETS / "teratts", log)
