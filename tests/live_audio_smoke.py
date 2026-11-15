@@ -1,4 +1,15 @@
 """Deterministic smoke test for the live DSP chain (no microphone required)."""
+from pathlib import Path
+import sys
+
+# GitHub Actions executes this file as python tests/live_audio_smoke.py.
+# In that mode Python puts the tests directory, not the repository root, at
+# sys.path[0]. Add the project root explicitly so the package import is stable
+# on Windows runners as well as local launches.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 import numpy as np
 
 from voice_reader.live_audio import LiveVoiceEngine, PRESETS, SAMPLE_RATE
