@@ -86,6 +86,35 @@ def main() -> None:
             f"sample_rate={full_rate} Hz."
         )
 
+        # Verify both newly added character voices use their intended pitch
+        # direction and preserve message duration after the tempo correction.
+        import sys
+        sys.path.insert(0, str(ROOT))
+        from voice_reader.voice_profiles import VOICE_PRESETS
+
+        for preset, target_ratio in (("cartoon", 1.20), ("villain", 0.82)):
+            options = VOICE_PRESETS[preset]["ffmpeg_options"].removeprefix("-af ")
+            pitch_filter = options.split(",aresample=", 1)[0]
+            pitch_path = temp_dir / f"{preset}-pitch.wav"
+            full_path = temp_dir / f"{preset}-full.wav"
+            render(FFMPEG, "sine=frequency=440:sample_rate=48000:duration=1", pitch_filter + ",aresample=48000", pitch_path)
+            pitch_rate, pitch_samples, _ = read_wav(pitch_path)
+            actual_ratio = dominant_frequency(pitch_samples, pitch_rate) / 440.0
+            if abs(actual_ratio - target_ratio) > 0.025:
+                raise AssertionError(
+                    f"{preset} pitch ratio {actual_ratio:.3f} differs from target {target_ratio:.2f}"
+                )
+            render(FFMPEG, "sine=frequency=440:sample_rate=48000:duration=1", options, full_path)
+            full_rate, full_samples, full_duration = read_wav(full_path)
+            if full_rate != 48000 or not 0.94 <= full_duration <= 1.06 or full_samples.size == 0:
+                raise AssertionError(
+                    f"{preset} filter returned invalid audio: {full_rate} Hz, {full_duration:.3f}s"
+                )
+            print(
+                f"PASS: {preset} filter; pitch ratio={actual_ratio:.3f}, "
+                f"duration={full_duration:.3f}s."
+            )
+
 
 if __name__ == "__main__":
     main()
