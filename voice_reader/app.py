@@ -704,6 +704,14 @@ def run_frozen_live_ui_smoke_test() -> int:
         root.update_idletasks()
         if not app.start_button.winfo_exists() or not app.input_combo.winfo_exists():
             raise RuntimeError("Интерфейс голосового режима создан не полностью.")
+        import numpy as np
+        sample_rate = 48_000
+        samples = np.arange(sample_rate, dtype=np.float32) / sample_rate
+        source = (0.15 * np.sin(2 * np.pi * 220 * samples)).astype(np.float32)
+        app.engine.configure("Низкий")
+        processed = app.engine.process_block(source)
+        if processed.shape != source.shape or not np.isfinite(processed).all():
+            raise RuntimeError("Встроенный DSP-движок не прошёл smoke test.")
         root.update()
         app.close()
         return 0
