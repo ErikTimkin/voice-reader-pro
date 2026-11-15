@@ -11,4 +11,5 @@ onnxruntime==1.23.2
 transformers==5.14.0
 huggingface-hub==1.33.0
 tokenizers==0.22.2
-
+sounddevice==0.5.2
+pedalboard==0.9.17
