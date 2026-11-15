@@ -240,6 +240,12 @@ class LiveVoiceApp:
             self._schedule_poll()
 
     def back(self):
+        if self._poll_job is not None:
+            try:
+                self.root.after_cancel(self._poll_job)
+            except tk.TclError:
+                pass
+            self._poll_job = None
         if self.engine.running:
             self.stop()
         self.engine.close()
