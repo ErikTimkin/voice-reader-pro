@@ -28,11 +28,6 @@ VOICE_PRESETS = {
         # duration, add controlled low-mid body and tame sharp high frequencies.
         "ffmpeg_options": "-af asetrate=42240,aresample=48000,atempo=1.136,bass=g=5:f=150,lowpass=f=5200,acompressor=threshold=0.12:ratio=2.2:attack=8:release=90,volume=1.2",
     },
-    "armenian": {
-        "label": "Восточный мужской акцент",
-        "engine": "armenian",
-        "ffmpeg_options": "-af volume=1.1",
-    },
     "armenian2": {
         "label": "Армянский 2.0 · таджикский оттенок",
         "engine": "silero_cis",
@@ -67,7 +62,8 @@ LEGACY_VOICE_IDS = {
     "ru-RU-SvetlanaNeural": "female",
     "dariya": "female",
     "ru-RU-DariyaNeural": "female",
-    # Armenian 2.0 is now a real, independent preset; keep the ID unchanged.
+    # Armenian 2.0/3/4 remain available as independent Silero CIS presets.
+  "armenian": "armenian2",
 }
 
 
