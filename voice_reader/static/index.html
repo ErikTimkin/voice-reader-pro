@@ -276,6 +276,7 @@
           <div class="slider-row"><label for="bass">Басы</label><output id="bassValue">0 dB</output><input id="bass" type="range" min="-6" max="10" value="0"></div>
           <div class="slider-row"><label for="treble">Звонкость</label><output id="trebleValue">0 dB</output><input id="treble" type="range" min="-6" max="8" value="0"></div>
         </div>
+        <button class="send" id="previewCustom" type="button" style="margin-top:15px;min-width:190px">▶  Проверить голос в Discord</button>
         <p class="section-sub" style="margin:13px 0 0">Настройки применяются к каждому сообщению, когда выбран «Свой вариант».</p>
       </section>
 
@@ -446,6 +447,25 @@
     }
 
     send.addEventListener('click', submitMessage);
+    document.querySelector('#previewCustom').addEventListener('click', async () => {
+      setNotice('Отправляю короткую проверку голоса в Discord…', 'loading');
+      try {
+        const response = await fetch('/api/speak', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            text: 'Всем привет! Это проверка моего собственного голоса.',
+            voice: 'custom',
+            custom_voice: customVoiceSettings()
+          })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.message || ('Ошибка сервера: ' + response.status));
+        setNotice('Проверка добавлена в очередь Discord. Послушай, как звучит голос.', 'success');
+      } catch (error) {
+        setNotice(error.message || 'Не удалось проверить голос.', 'error');
+      }
+    });
     message.addEventListener('keydown', event => {
       if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
         event.preventDefault();
