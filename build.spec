@@ -24,11 +24,13 @@ a = Analysis(
         (str(root / "tools" / "ffmpeg.exe"), "."),
         (str(root / "tools" / "cloudflared.exe"), "."),
     ] + davey_binaries + discord_binaries + torch_binaries + numpy_binaries
-      + onnx_binaries + tokenizers_binaries + huggingface_binaries + transformers_binaries\n      + sounddevice_binaries + pedalboard_binaries,
+      + onnx_binaries + tokenizers_binaries + huggingface_binaries + transformers_binaries
+      + sounddevice_binaries + pedalboard_binaries,
     datas=[
         (str(root / "voice_reader" / "static"), "voice_reader/static"),
     ] + davey_datas + discord_datas + torch_datas + numpy_datas
-      + onnx_datas + tokenizers_datas + huggingface_datas + transformers_datas\n      + sounddevice_datas + pedalboard_datas,
+      + onnx_datas + tokenizers_datas + huggingface_datas + transformers_datas
+      + sounddevice_datas + pedalboard_datas,
     hiddenimports=[
         "discord.opus",
         "discord.voice_client",
@@ -36,7 +38,8 @@ a = Analysis(
         "torch._C",
         "numpy",
     ] + davey_hiddenimports + discord_hiddenimports + torch_hiddenimports + numpy_hiddenimports
-      + onnx_hiddenimports + tokenizers_hiddenimports + huggingface_hiddenimports + transformers_hiddenimports\n      + sounddevice_hiddenimports + pedalboard_hiddenimports,
+      + onnx_hiddenimports + tokenizers_hiddenimports + huggingface_hiddenimports + transformers_hiddenimports
+      + sounddevice_hiddenimports + pedalboard_hiddenimports,
     hookspath=[],
     excludes=["torch.distributed", "torch.testing", "torch.utils.tensorboard"],
     noarchive=False,
