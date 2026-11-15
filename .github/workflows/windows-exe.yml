@@ -102,11 +102,11 @@ jobs:
           Copy-Item README.md dist/VoiceReaderPro/README.md -Force
       - name: Test voices from a relocated offline package
         run: python tests/packaged_voice_smoke.py --voices-dir dist/VoiceReaderPro/voices
-      - name: Smoke-test all seven voices from the packaged EXE
+      - name: Smoke-test all nine voices from the packaged EXE
         shell: pwsh
         run: |
           $exe = Join-Path $PWD 'dist/VoiceReaderPro/VoiceReaderPro.exe'
-          foreach ($voice in @('normal', 'female', 'cute_girl', 'armenian2', 'armenian3', 'armenian4', 'jelly_bear')) {
+          foreach ($voice in @('normal', 'female', 'cute_girl', 'armenian2', 'armenian3', 'armenian4', 'jelly_bear', 'cartoon', 'villain')) {
             $logPath = Join-Path $env:TEMP "VoiceReaderPro-smoke-$voice.log"
             Remove-Item $logPath -Force -ErrorAction SilentlyContinue
             Write-Host "Testing packaged EXE voice: $voice"
