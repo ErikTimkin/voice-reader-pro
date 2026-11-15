@@ -102,8 +102,10 @@ def main() -> None:
     finally:
         engine.close()
 
+    ascii_labels = {"Низкий": "low", "Высокий": "high", "Демон": "demon"}
     for preset, (actual, expected, error) in measured.items():
-        print(f"{preset}: measured={actual:.2f}Hz target={expected:.2f}Hz error={error:.2%}")
+        label = ascii_labels.get(preset, "pitch")
+        print(f"{label}: measured={actual:.2f}Hz target={expected:.2f}Hz error={error:.2%}")
     print(
         "PASS: six DSP presets, non-silent audio, pitch accuracy, variable callback blocks, "
         f"live reconfiguration and callback timing (p95={p95_ms:.2f}ms, p99={p99_ms:.2f}ms)"
