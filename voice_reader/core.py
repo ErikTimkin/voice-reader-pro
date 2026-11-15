@@ -468,10 +468,14 @@ class VoiceService:
             except Exception as exc:
                 self.log(f'Соединение Discord завершилось с ошибкой: {type(exc).__name__}: {exc}. Повтор подключения…')
 
-            if self.client.is_closed():
-                self.ready.clear()
-                self.voice_client = None
-                self.client = self._create_discord_client()
+            if not self.client.is_closed():
+                try:
+                    await self.client.close()
+                except Exception as cleanup_error:
+                    self.log(f'Не удалось корректно закрыть старый Discord-клиент: {cleanup_error}')
+            self.ready.clear()
+            self.voice_client = None
+            self.client = self._create_discord_client()
             self.log(f'Повторный запуск Discord через {retry_delay} сек…')
             await asyncio.sleep(retry_delay)
             retry_delay = min(retry_delay * 2, 60)
