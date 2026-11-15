@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import shutil
 import tempfile
 import wave
 import sys
@@ -11,7 +10,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from voice_reader.additional_tts import ArmenianAccentTTS
 from voice_reader.local_tts import LocalSileroTTS
 
 
@@ -30,75 +28,33 @@ async def main_async(source_voices: Path) -> None:
     cis_model = source_voices / "v5_cis_base.pt"
     if not cis_model.is_file() or cis_model.stat().st_size < 50_000_000:
         raise AssertionError(f"Packaged Silero CIS model is missing or incomplete: {cis_model}")
-    for relative in (
-        Path("armenian/armenian_tri.yaml"),
-        Path("armenian/armenian_reference.wav"),
-        Path("armenian/armenian_voice_state.safetensors"),
-        Path("armenian/tri_v1/model.safetensors"),
-        Path("armenian/tri_v1/tokenizer_tri.model"),
-    ):
-        if not (source_voices / relative).is_file():
-            raise AssertionError(f"Packaged voice resource is missing: {relative}")
-
-    generated_config = (source_voices / "armenian" / "armenian_tri.yaml").read_text(
-        encoding="utf-8"
-    )
-    if "__VOICE_ASSET_ROOT__" not in generated_config:
-        raise AssertionError("Armenian config must use portable path markers, not CI absolute paths")
-    if "D:\\\\a\\\\voice-reader-pro" in generated_config:
-        raise AssertionError("Armenian config contains a GitHub runner path")
-
-    # Copy just the external model folders to a new, unrelated path. This makes
-    # the test fail if either engine relies on the original build workspace.
-    with tempfile.TemporaryDirectory(prefix="voice-reader-portable-install-") as temp:
-        relocated = Path(temp) / "portable-install" / "voices"
-        relocated.mkdir(parents=True)
-        shutil.copytree(source_voices / "armenian", relocated / "armenian")
-        armenian = ArmenianAccentTTS(
-            relocated / "armenian", lambda _message: None
-        )
-        armenian_wav = Path(temp) / "portable-armenian.wav"
-        try:
-            await asyncio.to_thread(
-                armenian.synthesize_to_wav,
-                "Проверка армянского акцента после переноса папки.",
-                armenian_wav,
-            )
-            verify_wav(armenian_wav)
-        finally:
-            armenian.unload()
-
-    # PyTorch may keep the torch.package archive handle alive until process exit on Windows.
-    # The runner is ephemeral, so tolerate a locked temp model during cleanup.
-    with tempfile.TemporaryDirectory(
-        prefix="voice-reader-silero-cis-portable-", ignore_cleanup_errors=True
-    ) as temp:
+    with tempfile.TemporaryDirectory(prefix="voice-reader-cis-portable-", ignore_cleanup_errors=True) as temp:
         relocated_model = Path(temp) / "voices" / "v5_cis_base.pt"
         relocated_model.parent.mkdir(parents=True)
+        import shutil
         shutil.copy2(cis_model, relocated_model)
-        silero_cis = LocalSileroTTS(
+        tts = LocalSileroTTS(
             relocated_model,
             lambda _message: None,
             warmup_speakers=("ru_safarhuja", "ru_eduard", "ru_marat"),
             model_label="Silero v5 CIS Base",
             russian_accentor=True,
         )
-        await asyncio.to_thread(silero_cis.load)
+        await asyncio.to_thread(tts.load)
         for preset, speaker in (
             ("armenian2", "ru_safarhuja"),
             ("armenian3", "ru_eduard"),
             ("armenian4", "ru_marat"),
         ):
-            cis_wav = Path(temp) / f"portable-{preset}.wav"
+            target = Path(temp) / f"portable-{preset}.wav"
             await asyncio.to_thread(
-                silero_cis.synthesize_to_wav,
+                tts.synthesize_to_wav,
                 "Проверка русского текста с восточным акцентом.",
                 speaker,
-                cis_wav,
+                target,
             )
-            verify_wav(cis_wav)
-
-    print("Original Armenian voice and all three eastern-accent CIS voices synthesized from relocated offline packages.")
+            verify_wav(target)
+    print("All three retained eastern-accent CIS voices synthesized from a relocated offline package.")
 
 
 def main() -> None:
