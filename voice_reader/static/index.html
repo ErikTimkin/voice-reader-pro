@@ -212,6 +212,11 @@
           <span class="voice-name">Восточный мужской акцент</span>
           <span class="voice-desc">Русская речь с низким восточным тембром</span>
         </button>
+        <button class="voice armenian2" type="button" data-voice="armenian2" aria-pressed="false">
+          <span class="voice-top"><span class="voice-symbol">✦</span><span class="selection">✓</span></span>
+          <span class="voice-name">Армянский 2.0</span>
+          <span class="voice-desc">Мужской голос с восточным оттенком</span>
+        </button>
       </div>
 
       <div class="heading-row">
@@ -252,8 +257,7 @@
     let selectedVoice = '__DEFAULT_VOICE__';
     try {
       const savedVoice = localStorage.getItem('voiceReaderSelectedVoice');
-      if (savedVoice === 'armenian2') selectedVoice = 'armenian';
-      else if (availableVoices.has(savedVoice)) selectedVoice = savedVoice;
+      if (availableVoices.has(savedVoice)) selectedVoice = savedVoice;
     } catch (_) {}
     for (const card of voiceCards) {
       const active = card.dataset.voice === selectedVoice;
