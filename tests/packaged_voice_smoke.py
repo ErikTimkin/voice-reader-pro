@@ -79,21 +79,26 @@ async def main_async(source_voices: Path) -> None:
         silero_cis = LocalSileroTTS(
             relocated_model,
             lambda _message: None,
-            warmup_speakers=("ru_safarhuja",),
+            warmup_speakers=("ru_safarhuja", "ru_eduard", "ru_marat"),
             model_label="Silero v5 CIS Base",
             russian_accentor=True,
         )
-        cis_wav = Path(temp) / "portable-armenian2.wav"
         await asyncio.to_thread(silero_cis.load)
-        await asyncio.to_thread(
-            silero_cis.synthesize_to_wav,
-            "Проверка русского текста с армянским тембром.",
-            "ru_safarhuja",
-            cis_wav,
-        )
-        verify_wav(cis_wav)
+        for preset, speaker in (
+            ("armenian2", "ru_safarhuja"),
+            ("armenian3", "ru_eduard"),
+            ("armenian4", "ru_marat"),
+        ):
+            cis_wav = Path(temp) / f"portable-{preset}.wav"
+            await asyncio.to_thread(
+                silero_cis.synthesize_to_wav,
+                "Проверка русского текста с восточным акцентом.",
+                speaker,
+                cis_wav,
+            )
+            verify_wav(cis_wav)
 
-    print("Original Armenian and Armenian 2.0 voices synthesized from relocated offline packages.")
+    print("Original Armenian voice and all three eastern-accent CIS voices synthesized from relocated offline packages.")
 
 
 def main() -> None:
