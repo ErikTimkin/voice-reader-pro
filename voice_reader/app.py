@@ -36,6 +36,7 @@ class App:
         self.stop_requested = threading.Event()
         self.thread = self.loop = self.service = None
         self.keep_awake = False
+        self._keep_awake_job = None
         DATA.mkdir(parents=True, exist_ok=True)
         cfg = self.load()
 
@@ -293,21 +294,6 @@ class App:
         ffmpeg, cloudflared = tool('ffmpeg'), tool('cloudflared')
         if not ffmpeg or not cloudflared:
             return messagebox.showerror(APP_NAME, 'Не найдены встроенные FFmpeg или cloudflared.')
-        required_voice_files = (
-            VOICE_MODEL,
-            VOICE_ASSETS / 'armenian' / 'armenian_tri.yaml',
-            VOICE_ASSETS / 'armenian' / 'armenian_reference.wav',
-            VOICE_ASSETS / 'armenian' / 'armenian_voice_state.safetensors',
-            VOICE_ASSETS / 'armenian' / 'tri_v1' / 'model.safetensors',
-            VOICE_ASSETS / 'armenian' / 'tri_v1' / 'tokenizer_tri.model',
-        )
-        missing_voice_files = [path for path in required_voice_files if not path.is_file()]
-        if missing_voice_files:
-            return messagebox.showerror(
-                APP_NAME,
-                'Не найдены файлы армянского голоса. Распакуйте ZIP полностью: '
-                'рядом с VoiceReaderPro.exe должна быть папка voices.',
-            )
         try:
             self.save()
         except Exception as e:
@@ -322,21 +308,26 @@ class App:
         self.status.set('Запуск…')
         self.thread = threading.Thread(
             target=self.run,
-            args=(token, guild, channel, 'armenian', ffmpeg, cloudflared),
+            args=(token, guild, channel, 'normal', ffmpeg, cloudflared),
             daemon=True,
         )
         self.thread.start()
 
     def run(self, *args):
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
         try:
-            self.loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(self.loop)
-            self.loop.run_until_complete(self.run_async(*args))
-        except Exception as exc:
-            self.events.put((
-                'error',
-                f'{type(exc).__name__}: {exc}',
-            ))
+            while not self.stop_requested.is_set():
+                try:
+                    self.loop.run_until_complete(self.run_async(*args))
+                except Exception as exc:
+                    if self.stop_requested.is_set():
+                        break
+                    self.emit(
+                        f"Критическая ошибка сервиса: {type(exc).__name__}: {exc}. "
+                        "Перезапускаю Discord и веб-сервер через 5 секунд…"
+                    )
+                    self.stop_requested.wait(5)
         finally:
             if self.loop is not None and not self.loop.is_closed():
                 self.loop.close()
@@ -418,12 +409,17 @@ class App:
                         remaining -= interval
                     retry_delay = min(retry_delay * 2, 30)
         except Exception as e:
-            self.events.put(('error', str(e)))
+            self.emit(
+                f"Сервис завершился с ошибкой: {type(e).__name__}: {e}. "
+                "Передаю управление автоматическому перезапуску."
+            )
+            raise
         finally:
             if 'status_task' in locals():
                 status_task.cancel()
+            final_state = 'Остановлен' if self.stop_requested.is_set() else 'Перезапуск…'
             for key in self.service_states:
-                self.events.put(('state', (key, 'Остановлен')))
+                self.events.put(('state', (key, final_state)))
             if self.service:
                 await self.service.stop()
 
@@ -437,23 +433,53 @@ class App:
                 last_state = value
             await asyncio.sleep(1)
 
-    def _set_system_awake(self, enabled: bool) -> None:
-        """Prevent Windows system sleep while the voice service is running; allow display sleep."""
+    def _apply_system_awake(self, enabled: bool, log: bool = True) -> None:
+        """Ask Windows to keep the system awake while allowing the display to sleep."""
         if os.name != 'nt':
             return
-        try:
-            import ctypes
-            ES_CONTINUOUS = 0x80000000
-            ES_SYSTEM_REQUIRED = 0x00000001
-            flags = ES_CONTINUOUS | ES_SYSTEM_REQUIRED if enabled else ES_CONTINUOUS
-            ctypes.windll.kernel32.SetThreadExecutionState(flags)
-            self.keep_awake = enabled
+        import ctypes
+        ES_CONTINUOUS = 0x80000000
+        ES_SYSTEM_REQUIRED = 0x00000001
+        flags = ES_CONTINUOUS | ES_SYSTEM_REQUIRED if enabled else ES_CONTINUOUS
+        result = ctypes.windll.kernel32.SetThreadExecutionState(flags)
+        if result == 0:
+            raise ctypes.WinError()
+        if log:
             self.emit(
-                'Windows: сон системы отключён, пока работает озвучка.' if enabled
+                'Windows: сон системы отключён на время работы бота; экран может выключаться.' if enabled
                 else 'Windows: обычный режим энергосбережения восстановлен.'
             )
+
+    def _refresh_system_awake(self) -> None:
+        self._keep_awake_job = None
+        if not self.keep_awake or self.stop_requested.is_set():
+            return
+        try:
+            self._apply_system_awake(True, log=False)
         except Exception as exc:
-            self.emit(f'Не удалось изменить режим сна Windows: {type(exc).__name__}: {exc}')
+            self.emit(f'Не удалось обновить запрет сна Windows: {type(exc).__name__}: {exc}')
+        self._keep_awake_job = self.root.after(30_000, self._refresh_system_awake)
+
+    def _set_system_awake(self, enabled: bool) -> None:
+        self.keep_awake = enabled
+        if enabled:
+            try:
+                self._apply_system_awake(True)
+            except Exception as exc:
+                self.emit(f'Не удалось отключить сон Windows: {type(exc).__name__}: {exc}')
+            if self._keep_awake_job is None:
+                self._keep_awake_job = self.root.after(30_000, self._refresh_system_awake)
+        else:
+            if self._keep_awake_job is not None:
+                try:
+                    self.root.after_cancel(self._keep_awake_job)
+                except tk.TclError:
+                    pass
+                self._keep_awake_job = None
+            try:
+                self._apply_system_awake(False)
+            except Exception as exc:
+                self.emit(f'Не удалось восстановить режим сна Windows: {type(exc).__name__}: {exc}')
 
     def stop_service(self):
         self.stop_requested.set()
