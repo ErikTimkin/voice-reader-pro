@@ -10,7 +10,6 @@ davey_datas, davey_binaries, davey_hiddenimports = collect_all("davey")
 discord_datas, discord_binaries, discord_hiddenimports = collect_all("discord")
 torch_datas, torch_binaries, torch_hiddenimports = collect_all("torch")
 numpy_datas, numpy_binaries, numpy_hiddenimports = collect_all("numpy")
-pocket_datas, pocket_binaries, pocket_hiddenimports = collect_all("pocket_tts")
 onnx_datas, onnx_binaries, onnx_hiddenimports = collect_all("onnxruntime")
 sentencepiece_datas, sentencepiece_binaries, sentencepiece_hiddenimports = collect_all("sentencepiece")
 yaml_datas, yaml_binaries, yaml_hiddenimports = collect_all("yaml")
@@ -29,13 +28,13 @@ a = Analysis(
         (str(root / "tools" / "ffmpeg.exe"), "."),
         (str(root / "tools" / "cloudflared.exe"), "."),
     ] + davey_binaries + discord_binaries + torch_binaries + numpy_binaries
-      + pocket_binaries + onnx_binaries + sentencepiece_binaries + yaml_binaries
+      + onnx_binaries + sentencepiece_binaries + yaml_binaries
       + scipy_binaries + safetensors_binaries + tokenizers_binaries
       + huggingface_binaries + pydantic_binaries + transformers_binaries + stress_binaries,
     datas=[
         (str(root / "voice_reader" / "static"), "voice_reader/static"),
     ] + davey_datas + discord_datas + torch_datas + numpy_datas
-      + pocket_datas + onnx_datas + sentencepiece_datas + yaml_datas
+      + onnx_datas + sentencepiece_datas + yaml_datas
       + scipy_datas + safetensors_datas + tokenizers_datas
       + huggingface_datas + pydantic_datas + transformers_datas + stress_datas,
     hiddenimports=[
@@ -45,7 +44,7 @@ a = Analysis(
         "torch._C",
         "numpy",
     ] + davey_hiddenimports + discord_hiddenimports + torch_hiddenimports + numpy_hiddenimports
-      + pocket_hiddenimports + onnx_hiddenimports + sentencepiece_hiddenimports + yaml_hiddenimports
+      + onnx_hiddenimports + sentencepiece_hiddenimports + yaml_hiddenimports
       + scipy_hiddenimports + safetensors_hiddenimports + tokenizers_hiddenimports
       + huggingface_hiddenimports + pydantic_hiddenimports + transformers_hiddenimports + stress_hiddenimports,
     hookspath=[],
