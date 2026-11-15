@@ -52,49 +52,60 @@ async def main_async() -> None:
     if not cis_model_path.is_file() or cis_model_path.stat().st_size < 50_000_000:
         raise SystemExit(f"Silero CIS Armenian model is missing or incomplete: {cis_model_path}")
 
-    armenian2 = LocalSileroTTS(
+    eastern_speakers = {
+        "armenian2": "ru_safarhuja",
+        "armenian3": "ru_eduard",
+        "armenian4": "ru_marat",
+    }
+    eastern_tts = LocalSileroTTS(
         cis_model_path,
         lambda _message: None,
-        warmup_speakers=("ru_safarhuja",),
+        warmup_speakers=tuple(eastern_speakers.values()),
         model_label="Silero v5 CIS Base",
         russian_accentor=True,
     )
-    print("Loading Armenian 2.0 model and Russian stress dictionary...")
+    print("Loading and warming all three eastern-accent speakers...")
     load_started = time.perf_counter()
-    await asyncio.to_thread(armenian2.load)
+    await asyncio.to_thread(eastern_tts.load)
     load_elapsed = time.perf_counter() - load_started
-    target = ROOT / "tests" / "silero-armenian2.wav"
-    trials = []
-    for index in range(3):
-        started = time.perf_counter()
-        size, duration = await asyncio.to_thread(
-            armenian2.synthesize_to_wav,
-            sample_text,
-            "ru_safarhuja",
-            target,
+
+    for preset, speaker in eastern_speakers.items():
+        target = ROOT / "tests" / f"silero-{preset}.wav"
+        trials = []
+        for _ in range(3):
+            started = time.perf_counter()
+            size, duration = await asyncio.to_thread(
+                eastern_tts.synthesize_to_wav,
+                sample_text,
+                speaker,
+                target,
+            )
+            elapsed = time.perf_counter() - started
+            trials.append((elapsed, duration, elapsed / max(duration, 0.01)))
+        elapsed, duration, rtf = sorted(trials, key=lambda item: item[2])[1]
+        if size < 5_000 or duration < 0.5:
+            raise AssertionError(
+                f"{preset} generated suspicious audio: {size} bytes, {duration:.2f}s"
+            )
+        if rtf > 1.5 or rtf > baseline_rtf * 1.75:
+            raise AssertionError(
+                f"{preset} CPU synthesis is too slow: {elapsed:.2f}s for "
+                f"{duration:.2f}s of speech (median RTF={rtf:.2f}, "
+                f"standard Silero median RTF={baseline_rtf:.2f}, limits=1.5 and "
+                f"1.75x baseline)"
+            )
+        target.unlink(missing_ok=True)
+        print(
+            f"{preset} ({speaker}) median RTF={rtf:.2f}; "
+            f"audio={duration:.2f}s/{size} bytes."
         )
-        elapsed = time.perf_counter() - started
-        trials.append((elapsed, duration, elapsed / max(duration, 0.01)))
-    elapsed, duration, rtf = sorted(trials, key=lambda item: item[2])[1]
-    if size < 5_000 or duration < 0.5:
-        raise AssertionError(
-            f"Armenian 2.0 generated suspicious audio: {size} bytes, {duration:.2f}s"
-        )
-    if rtf > 1.5 or rtf > baseline_rtf * 1.75:
-        raise AssertionError(
-            f"Armenian 2.0 CPU synthesis is too slow: {elapsed:.2f}s for "
-            f"{duration:.2f}s of speech (Armenian median RTF={rtf:.2f}, "
-            f"standard Silero median RTF={baseline_rtf:.2f}, limits=1.5 and "
-            f"1.75x baseline)"
-        )
-    target.unlink(missing_ok=True)
+
     print(
         f"Standard Silero (aidar) median RTF={baseline_rtf:.2f}; "
-        f"Armenian 2.0 (ru_safarhuja) median RTF={rtf:.2f}; "
-        f"model load + warmup={load_elapsed:.2f}s; WAV={size} bytes."
+        f"three eastern speakers warmed in {load_elapsed:.2f}s."
     )
 
-    print("Male, female, cute and Armenian 2.0 Silero voices synthesized successfully.")
+    print("Male, female, cute and all three eastern-accent Silero CIS voices synthesized successfully.")
 
 
 if __name__ == "__main__":
