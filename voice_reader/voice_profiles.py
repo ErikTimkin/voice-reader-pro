@@ -55,7 +55,7 @@ LEGACY_VOICE_IDS = {
     "ru-RU-SvetlanaNeural": "female",
     "dariya": "female",
     "ru-RU-DariyaNeural": "female",
-    "armenian2": "armenian",
+    # Armenian 2.0 is now a real, independent preset; keep the ID unchanged.
 }
 
 
