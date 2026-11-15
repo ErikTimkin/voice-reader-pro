@@ -14,19 +14,21 @@ onnx_datas, onnx_binaries, onnx_hiddenimports = collect_all("onnxruntime")
 tokenizers_datas, tokenizers_binaries, tokenizers_hiddenimports = collect_all("tokenizers")
 transformers_datas, transformers_binaries, transformers_hiddenimports = collect_all("transformers")
 huggingface_datas, huggingface_binaries, huggingface_hiddenimports = collect_all("huggingface_hub")
+sounddevice_datas, sounddevice_binaries, sounddevice_hiddenimports = collect_all("sounddevice")
+pedalboard_datas, pedalboard_binaries, pedalboard_hiddenimports = collect_all("pedalboard")
 
 a = Analysis(
-    [str(root / "voice_reader" / "app.py")],
+    [str(root / "launcher.py")],
     pathex=[str(root)],
     binaries=[
         (str(root / "tools" / "ffmpeg.exe"), "."),
         (str(root / "tools" / "cloudflared.exe"), "."),
     ] + davey_binaries + discord_binaries + torch_binaries + numpy_binaries
-      + onnx_binaries + tokenizers_binaries + huggingface_binaries + transformers_binaries,
+      + onnx_binaries + tokenizers_binaries + huggingface_binaries + transformers_binaries\n      + sounddevice_binaries + pedalboard_binaries,
     datas=[
         (str(root / "voice_reader" / "static"), "voice_reader/static"),
     ] + davey_datas + discord_datas + torch_datas + numpy_datas
-      + onnx_datas + tokenizers_datas + huggingface_datas + transformers_datas,
+      + onnx_datas + tokenizers_datas + huggingface_datas + transformers_datas\n      + sounddevice_datas + pedalboard_datas,
     hiddenimports=[
         "discord.opus",
         "discord.voice_client",
@@ -34,7 +36,7 @@ a = Analysis(
         "torch._C",
         "numpy",
     ] + davey_hiddenimports + discord_hiddenimports + torch_hiddenimports + numpy_hiddenimports
-      + onnx_hiddenimports + tokenizers_hiddenimports + huggingface_hiddenimports + transformers_hiddenimports,
+      + onnx_hiddenimports + tokenizers_hiddenimports + huggingface_hiddenimports + transformers_hiddenimports\n      + sounddevice_hiddenimports + pedalboard_hiddenimports,
     hookspath=[],
     excludes=["torch.distributed", "torch.testing", "torch.utils.tensorboard"],
     noarchive=False,
