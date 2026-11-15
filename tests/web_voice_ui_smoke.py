@@ -42,7 +42,7 @@ def main() -> None:
         raise AssertionError("Retired Pocket TTS Armenian voice is still visible")
     for fragment in ('data-voice="superhero"', 'data-voice="custom"', 'id="customPanel"',
                      'id="pitch"', 'id="speed"', 'id="bass"', 'id="treble"',
-                     "custom_voice: voice === 'custom' ? customVoiceSettings() : null"):
+                     'id="previewCustom"', "custom_voice: voice === 'custom' ? customVoiceSettings() : null"):
         if fragment not in page:
             raise AssertionError(f"Custom/superhero voice UI is missing: {fragment}")
     for fragment in ("Армянский 2.0", "Кавказский акцент", "Татарский оттенок",
