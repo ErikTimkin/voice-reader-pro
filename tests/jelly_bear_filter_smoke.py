@@ -86,6 +86,56 @@ def main() -> None:
             f"sample_rate={full_rate} Hz."
         )
 
+        import sys
+        sys.path.insert(0, str(ROOT))
+        from voice_reader.voice_profiles import VOICE_PRESETS, build_custom_voice_profile
+
+        for preset, target_ratio in (
+            ("cartoon", 1.20),
+            ("villain", 0.82),
+            ("superhero", 0.95),
+        ):
+            options = VOICE_PRESETS[preset]["ffmpeg_options"].removeprefix("-af ")
+            pitch_filter = options.split(",aresample=", 1)[0]
+            pitch_path = temp_dir / f"{preset}-pitch.wav"
+            full_path = temp_dir / f"{preset}-full.wav"
+            render(FFMPEG, "sine=frequency=440:sample_rate=48000:duration=1",
+                   pitch_filter + ",aresample=48000", pitch_path)
+            pitch_rate, pitch_samples, _ = read_wav(pitch_path)
+            actual_ratio = dominant_frequency(pitch_samples, pitch_rate) / 440.0
+            if abs(actual_ratio - target_ratio) > 0.025:
+                raise AssertionError(
+                    f"{preset} pitch ratio {actual_ratio:.3f} differs from target {target_ratio:.2f}"
+                )
+            render(FFMPEG, "sine=frequency=440:sample_rate=48000:duration=1",
+                   options, full_path)
+            full_rate, full_samples, full_duration = read_wav(full_path)
+            if full_rate != 48000 or not 0.94 <= full_duration <= 1.06 or full_samples.size == 0:
+                raise AssertionError(
+                    f"{preset} filter returned invalid audio: {full_rate} Hz, {full_duration:.3f}s"
+                )
+            print(
+                f"PASS: {preset} filter; pitch ratio={actual_ratio:.3f}, "
+                f"duration={full_duration:.3f}s."
+            )
+
+        custom_speaker, custom_options = build_custom_voice_profile({
+            "base": "cute", "pitch": 15, "speed": 1.2, "bass": 4, "treble": 3
+        })
+        custom_path = temp_dir / "custom-full.wav"
+        render(FFMPEG, "sine=frequency=440:sample_rate=48000:duration=1",
+               custom_options.removeprefix("-af "), custom_path)
+        custom_rate, custom_samples, custom_duration = read_wav(custom_path)
+        if custom_speaker != "xenia" or custom_rate != 48000 or not 0.80 <= custom_duration <= 0.90:
+            raise AssertionError(
+                f"Custom voice effect failed: speaker={custom_speaker}, "
+                f"rate={custom_rate}, duration={custom_duration:.3f}s"
+            )
+        print(
+            f"PASS: custom voice filter; speaker={custom_speaker}, "
+            f"duration={custom_duration:.3f}s."
+        )
+
         # Verify both newly added character voices use their intended pitch
         # direction and preserve message duration after the tempo correction.
         import sys
