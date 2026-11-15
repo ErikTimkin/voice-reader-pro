@@ -9,8 +9,12 @@ from voice_reader.voice_profiles import VOICE_PRESETS
 
 
 def main() -> None:
-    if set(VOICE_PRESETS) != {"normal", "female", "cute_girl", "armenian", "armenian2", "jelly_bear"}:
-        raise AssertionError(f"Expected five browser voice presets: {list(VOICE_PRESETS)}")
+    expected_presets = {
+        "normal", "female", "cute_girl", "armenian", "armenian2",
+        "armenian3", "armenian4", "jelly_bear",
+    }
+    if set(VOICE_PRESETS) != expected_presets:
+        raise AssertionError(f"Expected eight browser voice presets: {list(VOICE_PRESETS)}")
     for voice in VOICE_PRESETS:
         assert normalize_voice_key(voice) == voice
     assert VOICE_PRESETS["jelly_bear"]["speaker"] == "aidar"
@@ -23,14 +27,20 @@ def main() -> None:
     assert normalize_voice_key("armenian2") == "armenian2"
     assert VOICE_PRESETS["armenian2"]["engine"] == "silero_cis"
     assert VOICE_PRESETS["armenian2"]["speaker"] == "ru_safarhuja"
+    assert VOICE_PRESETS["armenian3"]["engine"] == "silero_cis"
+    assert VOICE_PRESETS["armenian3"]["speaker"] == "ru_eduard"
+    assert VOICE_PRESETS["armenian4"]["engine"] == "silero_cis"
+    assert VOICE_PRESETS["armenian4"]["speaker"] == "ru_marat"
     assert VOICE_PRESETS["female"]["speaker"] == "baya"
     assert VOICE_PRESETS["cute_girl"]["speaker"] == "xenia"
 
     page = (ROOT / "voice_reader" / "static" / "index.html").read_text(encoding="utf-8")
     required = [
         'data-voice="normal"', 'data-voice="female"', 'data-voice="cute_girl"',
-        'data-voice="armenian"', 'data-voice="armenian2"', 'data-voice="jelly_bear"', "Желейный медведь",
-        'Обычный мужской', 'Обычный женский', 'Восточный мужской акцент', 'Милый голос',
+        'data-voice="armenian"', 'data-voice="armenian2"', 'data-voice="armenian3"',
+        'data-voice="armenian4"', 'data-voice="jelly_bear"', "Желейный медведь",
+        'Обычный мужской', 'Обычный женский', 'Восточный мужской акцент',
+        'Армянский 2.0', 'Кавказский акцент', 'Татарский оттенок', 'Милый голос',
         "event.key === 'Enter'", "!event.shiftKey",
         "JSON.stringify({text: text, voice: voice})", "-apple-system",
         "--page: #f5f5f7", "pendingRequests", "Отправить",
@@ -88,7 +98,7 @@ def main() -> None:
     if "self.queue = asyncio.Queue()" not in core or "self.queue.full()" in core:
         raise AssertionError("The message queue must not reject requests due to a fixed capacity")
 
-    print("Six browser voice presets including independent Armenian 2.0, selectable/copyable desktop logs, and desktop UI passed.")
+    print("Eight browser voice presets including three eastern-accent CIS variants, selectable/copyable desktop logs, and desktop UI passed.")
 
 
 if __name__ == "__main__":
