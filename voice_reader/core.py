@@ -404,8 +404,10 @@ class VoiceService:
     async def _preload_armenian2_tts(self):
         """Load the Silero CIS Armenian-accent speaker without blocking Discord."""
         try:
-            # Serialize the two Silero package loads to avoid a CPU/RAM spike.
-            await self.tts_ready.wait()
+            # Load this model independently. The previous dependency on
+            # self.tts_ready could stall every Armenian2/3/4 request forever
+            # if the unrelated default Silero model was slow or stuck.
+            self.log("Начинаю загрузку отдельной модели Silero CIS для восточных голосов…")
             started = time.perf_counter()
             await asyncio.to_thread(self.armenian2_tts.load)
             elapsed = (time.perf_counter() - started) * 1000
@@ -634,29 +636,32 @@ class VoiceService:
                 # Each engine has its own readiness and error state. A failed
                 # Silero load must not disable the independent Armenian model.
                 if engine == "silero":
-                    await self.tts_ready.wait()
+                    self.log(f'Ожидаю готовности модели для голоса «{profile["label"]}»…')
+                    try:
+                        await asyncio.wait_for(self.tts_ready.wait(), timeout=240)
+                    except asyncio.TimeoutError:
+                        raise TimeoutError("Обычная модель Silero не завершила загрузку за 240 секунд.")
                     if self.tts_error:
-                        self.log(
-                            f'Голос «{profile["label"]}» недоступен: '
-                            f'ошибка загрузки Silero: {self.tts_error}'
-                        )
-                        continue
+                        raise RuntimeError(f'Ошибка загрузки Silero: {self.tts_error}')
+                    self.log(f'Модель для голоса «{profile["label"]}» готова.')
                 elif engine == "armenian":
-                    await self.armenian_ready.wait()
+                    self.log(f'Ожидаю готовности Pocket TTS для голоса «{profile["label"]}»…')
+                    try:
+                        await asyncio.wait_for(self.armenian_ready.wait(), timeout=240)
+                    except asyncio.TimeoutError:
+                        raise TimeoutError("Pocket TTS не завершила загрузку за 240 секунд.")
                     if self.armenian_error:
-                        self.log(
-                            f'Голос «{profile["label"]}» недоступен: '
-                            f'ошибка загрузки Pocket TTS: {self.armenian_error}'
-                        )
-                        continue
+                        raise RuntimeError(f'Ошибка загрузки Pocket TTS: {self.armenian_error}')
+                    self.log(f'Pocket TTS для голоса «{profile["label"]}» готова.')
                 elif engine == "silero_cis":
-                    await self.armenian2_ready.wait()
+                    self.log(f'Ожидаю готовности Silero CIS для голоса «{profile["label"]}»…')
+                    try:
+                        await asyncio.wait_for(self.armenian2_ready.wait(), timeout=240)
+                    except asyncio.TimeoutError:
+                        raise TimeoutError("Модель Silero CIS не завершила загрузку за 240 секунд.")
                     if self.armenian2_error:
-                        self.log(
-                            f'Голос «{profile["label"]}» недоступен: '
-                            f'ошибка загрузки Silero CIS: {self.armenian2_error}'
-                        )
-                        continue
+                        raise RuntimeError(f'Ошибка загрузки Silero CIS: {self.armenian2_error}')
+                    self.log(f'Silero CIS для голоса «{profile["label"]}» готова к синтезу.')
                 self.log(
                     f'Локальная озвучка: {profile["label"]}; '
                     f'движок={engine}; диктор={profile.get("speaker", selected_voice)}.'
