@@ -102,7 +102,7 @@ jobs:
           Copy-Item README.md dist/VoiceReaderPro/README.md -Force
       - name: Test voices from a relocated offline package
         run: python tests/packaged_voice_smoke.py --voices-dir dist/VoiceReaderPro/voices
-      - name: Smoke-test all eight voices from the packaged EXE
+      - name: Smoke-test all seven voices from the packaged EXE
         shell: pwsh
         run: |
           $exe = Join-Path $PWD 'dist/VoiceReaderPro/VoiceReaderPro.exe'
