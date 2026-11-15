@@ -1,8 +1,7 @@
 """Low-latency microphone processing for the optional live voice mode.
 
-The engine writes processed microphone audio to a selected Windows playback
-endpoint. With VB-CABLE installed, choose "CABLE Input" here; Windows exposes
-the paired "CABLE Output" endpoint as a recording device for Discord and games.
+Audio is routed to a selected playback endpoint. With VB-CABLE installed,
+select "CABLE Input" here and "CABLE Output" as the Discord microphone.
 """
 from __future__ import annotations
 
@@ -10,7 +9,7 @@ import threading
 from typing import Any
 
 SAMPLE_RATE = 48_000
-BLOCK_SIZE = 960  # 20 ms at 48 kHz; a stability-first starting point.
+BLOCK_SIZE = 960  # 20 ms at 48 kHz; the DSP also accepts variable block sizes.
 
 PRESETS: dict[str, dict[str, Any]] = {
     "Обычный": {"pitch": 0.0, "bass": 0.0, "treble": 0.0, "drive": 0.0, "radio": False},
@@ -20,6 +19,126 @@ PRESETS: dict[str, dict[str, Any]] = {
     "Робот": {"pitch": 0.0, "bass": -1.0, "treble": 1.0, "drive": 18.0, "radio": False},
     "Демон": {"pitch": -7.0, "bass": 5.0, "treble": -3.0, "drive": 8.0, "radio": False},
 }
+
+
+class GranularPitchShifter:
+    """Stateful two-head pitch shifter designed for continuous microphone audio.
+
+    It intentionally does not use Pedalboard.PitchShift: its streaming
+    reset=False path can return empty/silent buffers in affected releases.
+    """
+
+    def __init__(self, sample_rate: int, semitones: float, max_delay_ms: float = 120.0):
+        import numpy as np
+
+        self._np = np
+        self.ratio = 2.0 ** (float(semitones) / 12.0)
+        self.buffer_size = max(int(int(sample_rate) * max_delay_ms / 1000.0), 1024)
+        if self.buffer_size % 2:
+            self.buffer_size += 1
+        self.buffer = np.zeros(self.buffer_size, dtype=np.float32)
+        self.write_pos = 0
+        self.read_a = 0.0
+        self.read_b = self.buffer_size / 2.0
+        self.phase = 0.0
+        self.fade_length = self.buffer_size // 2
+
+    def _read_many(self, positions, write_start: int, block_length: int, old_values, local_indices):
+        np = self._np
+        size = self.buffer_size
+        positions = np.mod(positions, size)
+        index_a = np.floor(positions).astype(np.int64)
+        index_b = (index_a + 1) % size
+        fraction = positions - index_a
+        value_a = self.buffer[index_a].copy()
+        value_b = self.buffer[index_b].copy()
+
+        # Restore the pre-block value for reads that are still in the future.
+        # This makes vectorised processing equivalent to interleaved
+        # sample-by-sample ring-buffer reads without a Python loop per sample.
+        relative_a = (index_a - write_start) % size
+        relative_b = (index_b - write_start) % size
+        future_a = (relative_a > local_indices) & (relative_a < block_length)
+        future_b = (relative_b > local_indices) & (relative_b < block_length)
+        if np.any(future_a):
+            value_a[future_a] = old_values[relative_a[future_a]]
+        if np.any(future_b):
+            value_b[future_b] = old_values[relative_b[future_b]]
+        return (1.0 - fraction) * value_a + fraction * value_b
+
+    def _read_one(self, position: float) -> float:
+        position %= self.buffer_size
+        index_a = int(position)
+        index_b = (index_a + 1) % self.buffer_size
+        fraction = position - index_a
+        return float((1.0 - fraction) * self.buffer[index_a] + fraction * self.buffer[index_b])
+
+    def process_block(self, audio):
+        """Process a mono float32 chunk; input chunk length may change per call."""
+        np = self._np
+        source = np.ascontiguousarray(audio, dtype=np.float32).reshape(-1)
+        if source.size == 0:
+            return source.copy()
+
+        output = np.empty_like(source)
+        offset = 0
+        size = self.buffer_size
+        ratio = self.ratio
+        fade_length = self.fade_length
+
+        while offset < source.size:
+            steps_to_boundary = max(
+                1, int(np.ceil((1.0 - self.phase) * fade_length - 1e-10))
+            )
+            chunk_size = min(source.size - offset, max(0, steps_to_boundary - 1))
+
+            if chunk_size:
+                local = np.arange(chunk_size, dtype=np.int64)
+                write_start = self.write_pos
+                write_indices = (write_start + local) % size
+                old_values = self.buffer[write_indices].copy()
+                self.buffer[write_indices] = source[offset:offset + chunk_size]
+
+                read_steps = np.arange(1, chunk_size + 1, dtype=np.float64)
+                samples_a = self._read_many(
+                    self.read_a + ratio * read_steps, write_start, chunk_size, old_values, local
+                )
+                samples_b = self._read_many(
+                    self.read_b + ratio * read_steps, write_start, chunk_size, old_values, local
+                )
+                phases = self.phase + read_steps / fade_length
+                output[offset:offset + chunk_size] = (
+                    np.cos(phases * (np.pi / 2.0)) * samples_a
+                    + np.sin(phases * (np.pi / 2.0)) * samples_b
+                )
+
+                self.read_a = (self.read_a + ratio * chunk_size) % size
+                self.read_b = (self.read_b + ratio * chunk_size) % size
+                self.write_pos = (self.write_pos + chunk_size) % size
+                self.phase += chunk_size / fade_length
+                offset += chunk_size
+
+            # Process a crossfade boundary in the exact streaming sample order.
+            if offset < source.size:
+                self.buffer[self.write_pos] = source[offset]
+                self.write_pos = (self.write_pos + 1) % size
+                self.phase += 1.0 / fade_length
+                if self.phase >= 1.0 - 1e-10:
+                    self.phase -= 1.0
+                    self.read_a = self.read_b
+                    self.read_b = (self.write_pos - fade_length) % size
+
+                self.read_a = (self.read_a + ratio) % size
+                self.read_b = (self.read_b + ratio) % size
+                sample_a = self._read_one(self.read_a)
+                sample_b = self._read_one(self.read_b)
+                output[offset] = (
+                    np.cos(self.phase * (np.pi / 2.0)) * sample_a
+                    + np.sin(self.phase * (np.pi / 2.0)) * sample_b
+                )
+                offset += 1
+
+        return np.clip(output, -1.0, 1.0)
 
 
 def _audio_libraries():
@@ -34,7 +153,6 @@ def _audio_libraries():
             LowpassFilter,
             LowShelfFilter,
             Pedalboard,
-            PitchShift,
         )
     except Exception as exc:
         raise RuntimeError(
@@ -48,7 +166,6 @@ def _audio_libraries():
         "LowpassFilter": LowpassFilter,
         "LowShelfFilter": LowShelfFilter,
         "Pedalboard": Pedalboard,
-        "PitchShift": PitchShift,
     }
 
 
@@ -77,6 +194,7 @@ class LiveVoiceEngine:
         self._lock = threading.RLock()
         self._stream = None
         self._board = None
+        self._pitch_shifter = None
         self._np = None
         self._sample_rate = SAMPLE_RATE
         self._settings = dict(PRESETS["Обычный"])
@@ -95,13 +213,10 @@ class LiveVoiceEngine:
     def _make_board(self, settings: dict[str, Any]):
         _, _, classes = _audio_libraries()
         plugins = []
-        pitch = float(settings.get("pitch", 0.0))
         bass = float(settings.get("bass", 0.0))
         treble = float(settings.get("treble", 0.0))
         drive = max(0.0, min(30.0, float(settings.get("drive", 0.0))))
 
-        if abs(pitch) >= 0.1:
-            plugins.append(classes["PitchShift"](semitones=pitch))
         if settings.get("radio"):
             plugins.extend((
                 classes["HighpassFilter"](cutoff_frequency_hz=320.0),
@@ -120,6 +235,11 @@ class LiveVoiceEngine:
         plugins.append(classes["Compressor"](threshold_db=-18.0, ratio=2.5))
         return classes["Pedalboard"](plugins)
 
+    @staticmethod
+    def _make_pitch_shifter(settings: dict[str, Any], sample_rate: int):
+        semitones = float(settings.get("pitch", 0.0))
+        return GranularPitchShifter(sample_rate, semitones) if abs(semitones) >= 0.1 else None
+
     def configure(self, preset: str, settings: dict[str, Any] | None = None) -> None:
         if preset not in PRESETS:
             raise ValueError(f"Неизвестный пресет: {preset}")
@@ -129,10 +249,12 @@ class LiveVoiceEngine:
                 if key in settings:
                     next_settings[key] = float(settings[key])
         next_board = self._make_board(next_settings)
+        next_pitch_shifter = self._make_pitch_shifter(next_settings, self._sample_rate)
         with self._lock:
             self._settings = next_settings
             self._preset = preset
             self._board = next_board
+            self._pitch_shifter = next_pitch_shifter
 
     def start(self, input_device: int, output_device: int) -> None:
         if self.running:
@@ -144,8 +266,6 @@ class LiveVoiceEngine:
         if self._board is None:
             self.configure(self._preset, self._settings)
 
-        # Validate both endpoints before opening the stream, and try a common
-        # fallback rate if a particular driver does not support 48 kHz.
         selected_rate = SAMPLE_RATE
         try:
             sd.check_input_settings(device=input_device, channels=1, dtype="float32", samplerate=selected_rate)
@@ -155,11 +275,15 @@ class LiveVoiceEngine:
             sd.check_input_settings(device=input_device, channels=1, dtype="float32", samplerate=selected_rate)
             sd.check_output_settings(device=output_device, channels=1, dtype="float32", samplerate=selected_rate)
 
-        self._sample_rate = selected_rate
+        with self._lock:
+            if selected_rate != self._sample_rate:
+                self._sample_rate = selected_rate
+                self._pitch_shifter = self._make_pitch_shifter(self._settings, selected_rate)
+
         stream = sd.Stream(
             device=(int(input_device), int(output_device)),
             samplerate=selected_rate,
-            blocksize=max(1, round(BLOCK_SIZE * selected_rate / SAMPLE_RATE)),
+            blocksize=BLOCK_SIZE,
             channels=(1, 1),
             dtype="float32",
             latency="low",
@@ -179,18 +303,23 @@ class LiveVoiceEngine:
             np, _, _ = _audio_libraries()
         with self._lock:
             board = self._board
+            pitch_shifter = self._pitch_shifter
         if board is None:
             self.configure(self._preset, self._settings)
             with self._lock:
                 board = self._board
-        samples = np.asarray(audio, dtype="float32").reshape(1, -1)
-        processed = board(samples, self._sample_rate, reset=False)
+                pitch_shifter = self._pitch_shifter
+
+        samples = np.asarray(audio, dtype="float32").reshape(-1)
+        if pitch_shifter is not None:
+            samples = pitch_shifter.process_block(samples)
+        processed = board(samples.reshape(1, -1), self._sample_rate, reset=False)
         processed = np.asarray(processed, dtype="float32").reshape(-1)
-        if processed.size != samples.shape[1]:
-            if processed.size > samples.shape[1]:
-                processed = processed[:samples.shape[1]]
+        if processed.size != samples.size:
+            if processed.size > samples.size:
+                processed = processed[:samples.size]
             else:
-                processed = np.pad(processed, (0, samples.shape[1] - processed.size))
+                processed = np.pad(processed, (0, samples.size - processed.size))
         return np.clip(processed, -1.0, 1.0)
 
     def _callback(self, indata, outdata, frames, time_info, status) -> None:
@@ -215,4 +344,5 @@ class LiveVoiceEngine:
         self.stop()
         with self._lock:
             self._board = None
+            self._pitch_shifter = None
             self._np = None
