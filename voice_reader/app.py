@@ -599,7 +599,7 @@ def run_frozen_voice_smoke_test(preset: str) -> int:
             tts = LocalSileroTTS(
                 VOICE_ASSETS / "v5_cis_base.pt",
                 log,
-                warmup_speakers=("ru_zara",),
+                warmup_speakers=("ru_safarhuja",),
                 model_label="Silero v5 CIS Base",
                 russian_accentor=True,
             )
