@@ -9,9 +9,9 @@ from voice_reader.voice_profiles import VOICE_PRESETS
 
 
 def main() -> None:
-    expected = {"normal", "female", "cute_girl", "armenian2", "armenian3", "armenian4", "jelly_bear"}
+    expected = {"normal", "female", "cute_girl", "armenian2", "armenian3", "armenian4", "jelly_bear", "cartoon", "villain"}
     if set(VOICE_PRESETS) != expected:
-        raise AssertionError(f"Expected seven browser voice presets: {list(VOICE_PRESETS)}")
+        raise AssertionError(f"Expected nine browser voice presets: {list(VOICE_PRESETS)}")
     for voice in VOICE_PRESETS:
         assert normalize_voice_key(voice) == voice
     assert normalize_voice_key("armenian") == "armenian2"
@@ -21,6 +21,10 @@ def main() -> None:
     assert VOICE_PRESETS["armenian3"]["speaker"] == "ru_eduard"
     assert VOICE_PRESETS["armenian4"]["speaker"] == "ru_marat"
     assert VOICE_PRESETS["jelly_bear"]["speaker"] == "aidar"
+    assert VOICE_PRESETS["cartoon"]["speaker"] == "xenia"
+    assert VOICE_PRESETS["villain"]["speaker"] == "aidar"
+    assert "asetrate=57600" in VOICE_PRESETS["cartoon"]["ffmpeg_options"]
+    assert "asetrate=39360" in VOICE_PRESETS["villain"]["ffmpeg_options"]
 
     page = (ROOT / "voice_reader" / "static" / "index.html").read_text(encoding="utf-8")
     for voice in expected:
@@ -57,7 +61,7 @@ def main() -> None:
     if "self.queue = asyncio.Queue()" not in core or "self.queue.full()" in core:
         raise AssertionError("The message queue must remain unbounded")
 
-    print("Seven browser voices, three eastern-accent CIS variants, selectable logs, keep-awake refresh, and service restart supervision passed.")
+    print("Nine browser voices, three eastern-accent CIS variants, selectable logs, keep-awake refresh, and service restart supervision passed.")
 
 
 if __name__ == "__main__":
