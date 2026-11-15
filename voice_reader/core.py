@@ -503,29 +503,29 @@ class VoiceService:
                 synth_started = time.perf_counter()
                 source = None
 
-                    fd, file_name = tempfile.mkstemp(suffix='.wav', prefix='voice-reader-')
-                    os.close(fd)
-                    if engine in ("silero", "silero_cis"):
-                        tts_engine = self.local_tts if engine == "silero" else self.armenian2_tts
-                        audio_bytes, audio_duration = await asyncio.to_thread(
-                            tts_engine.synthesize_to_wav,
-                            speech_text,
-                            profile["speaker"],
-                            file_name,
-                        )
-                    elif engine == "teratts":
-                        audio_bytes, audio_duration = await asyncio.to_thread(
-                            self.pop_tts.synthesize_to_wav,
-                            speech_text,
-                            file_name,
-                        )
-                    else:
-                        raise RuntimeError(f"Неизвестный движок озвучивания: {engine}")
-                    synth_ms = (time.perf_counter() - synth_started) * 1000
-                    self.log(
-                        f'Локальная модель создала звук за {synth_ms:.0f} мс: '
-                        f'{audio_duration:.2f} сек, {audio_bytes} байт.'
+                fd, file_name = tempfile.mkstemp(suffix='.wav', prefix='voice-reader-')
+                os.close(fd)
+                if engine in ("silero", "silero_cis"):
+                    tts_engine = self.local_tts if engine == "silero" else self.armenian2_tts
+                    audio_bytes, audio_duration = await asyncio.to_thread(
+                        tts_engine.synthesize_to_wav,
+                        speech_text,
+                        profile["speaker"],
+                        file_name,
                     )
+                elif engine == "teratts":
+                    audio_bytes, audio_duration = await asyncio.to_thread(
+                        self.pop_tts.synthesize_to_wav,
+                        speech_text,
+                        file_name,
+                    )
+                else:
+                    raise RuntimeError(f"Неизвестный движок озвучивания: {engine}")
+                synth_ms = (time.perf_counter() - synth_started) * 1000
+                self.log(
+                    f'Локальная модель создала звук за {synth_ms:.0f} мс: '
+                    f'{audio_duration:.2f} сек, {audio_bytes} байт.'
+                )
 
                 if not self.voice_client or not self.voice_client.is_connected():
                     self.ready.clear()
