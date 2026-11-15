@@ -245,7 +245,8 @@ class VoiceService:
         self.queue = asyncio.Queue()
         self.client = discord.Client(intents=discord.Intents(guilds=True, voice_states=True))
         self.runner = self.site = self.tunnel = self.worker = self.discord_task = self.start_watchdog = None
-        self.tts_load_task = self.loop_watchdog_task = self.voice_watchdog_task = None
+        self.tts_load_task = self.armenian_load_task = self.armenian2_load_task = None
+        self.loop_watchdog_task = self.voice_watchdog_task = None
         self.voice_client = None
         self.ready = asyncio.Event()
 
@@ -353,6 +354,10 @@ class VoiceService:
         self.worker = asyncio.create_task(self.play_worker())
         self.tts_load_task = asyncio.create_task(self._load_local_tts())
         self.armenian_load_task = asyncio.create_task(self._preload_armenian_tts())
+        # Start the Silero CIS model loader as well: armenian2/3/4 presets
+        # wait on armenian2_ready, so leaving this task unscheduled stalls the
+        # FIFO playback worker and every message behind the first CIS voice.
+        self.armenian2_load_task = asyncio.create_task(self._preload_armenian2_tts())
         self.loop_watchdog_task = asyncio.create_task(self._watch_event_loop())
         self.voice_watchdog_task = asyncio.create_task(self._watch_voice_connection())
         self.discord_task = asyncio.create_task(self._start_discord())
