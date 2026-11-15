@@ -228,8 +228,12 @@ class LiveVoiceApp:
     def _poll(self):
         self._poll_job = None
         if self.engine.last_error:
-            self.status.set(f"Ошибка обработки: {self.engine.last_error}")
-            self.stop()
+            error = self.engine.last_error
+            try:
+                self.engine.stop()
+            finally:
+                self.start_button.configure(text="▶  Включить голосовой эффект")
+                self.status.set(f"Ошибка обработки: {error}")
         elif self.engine.last_status and self.engine.running:
             self.status.set(f"Работает · {self.engine.last_status}")
         if self.root.winfo_exists():
