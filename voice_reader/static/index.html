@@ -344,6 +344,7 @@
       card.classList.toggle('selected', active);
       card.setAttribute('aria-pressed', String(active));
     }
+    customPanel.hidden = selectedVoice !== 'custom';
     let pendingRequests = 0;
 
     async function refreshBotStatus() {
