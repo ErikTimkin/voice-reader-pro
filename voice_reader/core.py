@@ -503,7 +503,6 @@ class VoiceService:
                 synth_started = time.perf_counter()
                 source = None
 
-                else:
                     fd, file_name = tempfile.mkstemp(suffix='.wav', prefix='voice-reader-')
                     os.close(fd)
                     if engine in ("silero", "silero_cis"):
