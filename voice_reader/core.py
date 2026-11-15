@@ -240,7 +240,7 @@ class VoiceService:
         self.armenian2_error = None
          # Unbounded FIFO: users can submit repeatedly without per-minute throttling.
         self.queue = asyncio.Queue()
-        self.client = discord.Client(intents=discord.Intents(guilds=True, voice_states=True))
+        self.client = self._create_discord_client()
         self.runner = self.site = self.tunnel = self.worker = self.discord_task = self.start_watchdog = None
         self.tts_load_task = self.armenian2_load_task = None
         self.loop_watchdog_task = self.voice_watchdog_task = None
@@ -267,10 +267,14 @@ class VoiceService:
             component_logger.addHandler(self._discord_log_handler)
             component_logger.propagate = False
 
-        self.client.event(self.on_ready)
-        self.client.event(self.on_voice_state_update)
-        self.client.event(self.on_disconnect)
-        self.client.event(self.on_resumed)
+    def _create_discord_client(self):
+        """Create a fresh gateway client after an unrecoverable client shutdown."""
+        client = discord.Client(intents=discord.Intents(guilds=True, voice_states=True))
+        client.event(self.on_ready)
+        client.event(self.on_voice_state_update)
+        client.event(self.on_disconnect)
+        client.event(self.on_resumed)
+        return client
 
     async def on_ready(self):
         # on_ready may fire again after a Discord gateway reconnect.
@@ -427,7 +431,12 @@ class VoiceService:
     async def _start_discord(self):
         """Keep retrying transient Discord/API failures until the app is stopped."""
         retry_delay = 2
-        while not self.client.is_closed():
+        while True:
+            if self.client.is_closed():
+                self.ready.clear()
+                self.voice_client = None
+                self.log('Пересоздаю закрытый Discord-клиент для нового подключения…')
+                self.client = self._create_discord_client()
             try:
                 timeout = aiohttp.ClientTimeout(total=20)
                 headers = {'Authorization': f'Bot {self.token}'}
@@ -446,9 +455,7 @@ class VoiceService:
                 # This outer loop also recovers when startup/connect raises and
                 # returns control to this task instead of reconnecting itself.
                 await self.client.start(self.token, reconnect=True)
-                if self.client.is_closed():
-                    break
-                self.log('Клиент Discord неожиданно завершил работу. Повторяю запуск…')
+                self.log('Клиент Discord завершил цикл подключения. Проверяю состояние и повторяю запуск…')
             except asyncio.CancelledError:
                 raise
             except discord.LoginFailure:
@@ -461,11 +468,13 @@ class VoiceService:
             except Exception as exc:
                 self.log(f'Соединение Discord завершилось с ошибкой: {type(exc).__name__}: {exc}. Повтор подключения…')
 
-            if not self.client.is_closed():
+            if self.client.is_closed():
                 self.ready.clear()
-                self.log(f'Повторный запуск Discord через {retry_delay} сек…')
-                await asyncio.sleep(retry_delay)
-                retry_delay = min(retry_delay * 2, 60)
+                self.voice_client = None
+                self.client = self._create_discord_client()
+            self.log(f'Повторный запуск Discord через {retry_delay} сек…')
+            await asyncio.sleep(retry_delay)
+            retry_delay = min(retry_delay * 2, 60)
 
     async def _check_discord_startup(self):
         try:
