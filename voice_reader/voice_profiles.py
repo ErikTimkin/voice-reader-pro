@@ -41,6 +41,19 @@ VOICE_PRESETS = {
         # Lower pitch by 18%, restore duration, and add a controlled dark low end.
         "ffmpeg_options": "-af asetrate=39360,aresample=48000,atempo=1.219512,bass=g=7:f=110,lowpass=f=4300,acompressor=threshold=0.13:ratio=2.4:attack=10:release=110,volume=1.2",
     },
+    "superhero": {
+        "label": "Супергерой",
+        "engine": "silero",
+        "speaker": "aidar",
+        # Confident, resonant announcer-style delivery with a subtle pitch drop.
+        "ffmpeg_options": "-af asetrate=45600,aresample=48000,atempo=1.052632,bass=g=4:f=125,treble=g=1.5:f=3600,acompressor=threshold=0.11:ratio=2.5:attack=8:release=100,volume=1.2",
+    },
+    "custom": {
+        "label": "Свой вариант",
+        "engine": "silero",
+        "speaker": "aidar",
+        "ffmpeg_options": "-af volume=1.15",
+    },
     "armenian2": {
         "label": "Армянский 2.0 · таджикский оттенок",
         "engine": "silero_cis",
@@ -79,6 +92,35 @@ LEGACY_VOICE_IDS = {
     "armenian": "armenian2",
 }
 
+
+
+def build_custom_voice_profile(settings: dict | None) -> tuple[str, str]:
+    """Build a bounded FFmpeg voice effect chain from browser slider values."""
+    settings = settings if isinstance(settings, dict) else {}
+    speakers = {"male": "aidar", "female": "baya", "cute": "xenia"}
+    speaker = speakers.get(str(settings.get("base", "male")), "aidar")
+
+    def bounded(name: str, default: float, minimum: float, maximum: float) -> float:
+        try:
+            value = float(settings.get(name, default))
+        except (TypeError, ValueError):
+            value = default
+        if not (-1000 < value < 1000):
+            value = default
+        return max(minimum, min(maximum, value))
+
+    pitch = bounded("pitch", 0, -20, 20)
+    speed = bounded("speed", 1, 0.75, 1.35)
+    bass = bounded("bass", 0, -6, 10)
+    treble = bounded("treble", 0, -6, 8)
+    rate = round(48000 * (1 + pitch / 100))
+    tempo = speed / (1 + pitch / 100)
+    filters = (
+        f"asetrate={rate},aresample=48000,atempo={tempo:.5f},"
+        f"bass=g={bass:.1f}:f=120,treble=g={treble:.1f}:f=4200,"
+        "acompressor=threshold=0.13:ratio=2:attack=8:release=95,volume=1.15"
+    )
+    return speaker, "-af " + filters
 
 def resolve_voice_profile(selection: str | None) -> dict:
     key = LEGACY_VOICE_IDS.get(selection or "", selection or "normal")
