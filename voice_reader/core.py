@@ -3,9 +3,7 @@ import array
 import logging
 import math
 import os
-import queue
 import re
-import threading
 import tempfile
 import time
 from pathlib import Path
@@ -74,149 +72,6 @@ class DiagnosticFFmpegPCMAudio(discord.FFmpegPCMAudio):
             elif rms < 80:
                 self._voice_log('ПРЕДУПРЕЖДЕНИЕ: уровень PCM очень низкий; возможна почти полная тишина.')
         return data
-
-
-class StreamingPCMSource(discord.AudioSource):
-    """Thread-safe 48 kHz stereo PCM source fed by Pocket TTS chunks."""
-
-    FRAME_BYTES = 3840  # 20 ms, 48 kHz, 16-bit, stereo
-
-    def __init__(self, logger):
-        self.log = logger
-        self._frames = queue.Queue(maxsize=150)
-        self.stop_event = threading.Event()
-        self._finished = False
-        self._error = None
-        self._bytes = 0
-        self._frames_read = 0
-        self._underruns = 0
-        # Preserve resampler state and partial Discord frames across TTS chunks.
-        self._previous_sample = None
-        self._pending_pcm = bytearray()
-        self._ready = threading.Event()
-
-    def _queue_pcm(self, pcm_mono):
-        import numpy as np
-        if pcm_mono.size == 0 or self.stop_event.is_set():
-            return
-        stereo = np.repeat(pcm_mono, 2)
-        self._pending_pcm.extend(stereo.tobytes())
-        while len(self._pending_pcm) >= self.FRAME_BYTES:
-            if self.stop_event.is_set():
-                return
-            frame = bytes(self._pending_pcm[:self.FRAME_BYTES])
-            del self._pending_pcm[:self.FRAME_BYTES]
-            while not self.stop_event.is_set():
-                try:
-                    self._frames.put(frame, timeout=0.1)
-                    self._bytes += len(frame)
-                    if self._frames.qsize() >= 8:
-                        self._ready.set()
-                    break
-                except queue.Full:
-                    continue
-
-    def push_mono_24k(self, samples):
-        import numpy as np
-        if self.stop_event.is_set():
-            return
-        samples = np.asarray(samples, dtype=np.float32).reshape(-1)
-        if samples.size == 0:
-            return
-
-        # Stateful 2x interpolation prevents discontinuities at model chunk
-        # boundaries. Hold the last source sample until the next chunk arrives.
-        if self._previous_sample is None:
-            if samples.size < 2:
-                self._previous_sample = float(samples[-1])
-                return
-            left = samples[:-1]
-            right = samples[1:]
-        else:
-            joined = np.concatenate((
-                np.asarray([self._previous_sample], dtype=np.float32), samples
-            ))
-            left = joined[:-1]
-            right = joined[1:]
-
-        upsampled = np.empty(left.size * 2, dtype=np.float32)
-        upsampled[0::2] = left
-        upsampled[1::2] = (left + right) * 0.5
-        self._previous_sample = float(samples[-1])
-        pcm_mono = (np.clip(upsampled, -1.0, 1.0) * 32767.0).astype(np.int16)
-        self._queue_pcm(pcm_mono)
-
-    def finish(self, error=None):
-        if self._finished:
-            return
-        self._finished = True
-        self._error = error
-        self._ready.set()
-        if self.stop_event.is_set():
-            # A stopped Discord player no longer drains the queue.
-            while True:
-                try:
-                    self._frames.get_nowait()
-                except queue.Empty:
-                    break
-            self._pending_pcm.clear()
-            self._previous_sample = None
-        else:
-            # Flush the final held sample and pad only once, at end of stream.
-            if self._previous_sample is not None:
-                import numpy as np
-                final_sample = np.asarray([self._previous_sample], dtype=np.float32)
-                pcm = (np.clip(final_sample, -1.0, 1.0) * 32767.0).astype(np.int16)
-                self._queue_pcm(pcm)
-                self._previous_sample = None
-            if self._pending_pcm:
-                self._pending_pcm.extend(
-                    bytes(self.FRAME_BYTES - len(self._pending_pcm))
-                )
-                frame = bytes(self._pending_pcm)
-                self._pending_pcm.clear()
-                self._frames.put(frame)
-                self._bytes += len(frame)
-        self._frames.put(None)
-
-    def wait_ready(self, timeout=4.0):
-        """Wait until a short prefill is queued, or synthesis has finished."""
-        return self._ready.wait(timeout)
-
-    def read(self):
-        try:
-            frame = self._frames.get(timeout=0.02)
-        except queue.Empty:
-            # Do not block Discord's audio thread indefinitely if Pocket TTS
-            # pauses between chunks. A correctly sized silence frame keeps the
-            # player alive and lets stop()/cleanup remain responsive.
-            self._underruns += 1
-            if self._underruns in (1, 5, 25):
-                self.log(
-                    f"Армянский аудиопоток ждёт генерацию: пропусков буфера={self._underruns}."
-                )
-            return bytes(self.FRAME_BYTES)
-        if frame is None:
-            if self._error is not None:
-                raise RuntimeError(
-                    f"Потоковая генерация армянского голоса завершилась с ошибкой: {self._error}"
-                ) from self._error
-            return b""
-        if self._underruns:
-            self.log(
-                f"Армянский аудиобуфер восстановлен после {self._underruns} пустых кадров."
-            )
-            self._underruns = 0
-        self._frames_read += 1
-        return frame
-
-    def is_opus(self):
-        return False
-
-    def cleanup(self):
-        self.stop_event.set()
-        if not self._finished:
-            self.finish()
 
 
 class VoiceService:
@@ -603,7 +458,6 @@ class VoiceService:
             voice_client = None
             original_send_packet = None
             original_get_voice_packet = None
-            producer_task = None
             source = None
 
             try:
@@ -647,7 +501,6 @@ class VoiceService:
                     self.log(f'Числа преобразованы в слова перед озвучкой: {speech_text[:180]}')
 
                 synth_started = time.perf_counter()
-                producer_task = None
                 source = None
 
                 else:
@@ -786,14 +639,6 @@ class VoiceService:
                     original_send_packet = None
                     raise
 
-                if producer_task is not None:
-                    try:
-                        await producer_task
-                    except Exception as producer_error:
-                        self.log(
-                            f"Ошибка генерации потока армянского голоса: "
-                            f"{type(producer_error).__name__}: {producer_error}"
-                        )
                 playback_error = await done
                 if playback_error:
                     self.log(
