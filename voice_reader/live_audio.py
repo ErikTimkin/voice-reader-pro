@@ -174,7 +174,9 @@ class LiveVoiceEngine:
 
     def process_block(self, audio):
         """Process one mono float32 block; exposed for deterministic DSP tests."""
-        np, _, _ = _audio_libraries()
+        np = self._np
+        if np is None:
+            np, _, _ = _audio_libraries()
         with self._lock:
             board = self._board
         if board is None:
