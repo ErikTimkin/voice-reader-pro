@@ -27,8 +27,8 @@ class App:
     def __init__(self, root):
         self.root = root
         root.title(APP_NAME)
-        root.geometry('900x790')
-        root.minsize(800, 700)
+        root.geometry('760x650')
+        root.minsize(680, 560)
         root.option_add('*Font', ('Segoe UI', 9))
         root.configure(bg='#090d18')
 
@@ -46,158 +46,124 @@ class App:
         except tk.TclError:
             pass
 
-        BG = '#090d18'
-        PANEL = '#121a2b'
-        FIELD = '#0b1322'
-        TEXT = '#edf2ff'
-        MUTED = '#93a0b6'
-        PURPLE = '#887cff'
-        BORDER = '#26334b'
-
+        BG, PANEL, FIELD = '#090d18', '#121a2b', '#0b1322'
+        TEXT, MUTED, PURPLE, BORDER = '#edf2ff', '#93a0b6', '#887cff', '#26334b'
         style.configure('Shell.TFrame', background=BG)
         style.configure('Card.TFrame', background=PANEL)
-        style.configure('Title.TLabel', background=BG, foreground=TEXT,
-                        font=('Segoe UI', 22, 'bold'))
-        style.configure('Subtitle.TLabel', background=BG, foreground=MUTED,
-                        font=('Segoe UI', 10))
-        style.configure('CardTitle.TLabel', background=PANEL, foreground=TEXT,
-                        font=('Segoe UI', 13, 'bold'))
-        style.configure('Field.TLabel', background=PANEL, foreground='#aebbd0',
-                        font=('Segoe UI', 9, 'bold'))
-        style.configure('Muted.TLabel', background=PANEL, foreground=MUTED,
-                        font=('Segoe UI', 9))
-        style.configure('Status.TLabel', background=BG, foreground='#a6f0d2',
-                        font=('Segoe UI', 9, 'bold'))
-        style.configure('StatusCard.TFrame', background='#172238')
-        style.configure('StatusName.TLabel', background='#172238', foreground='#8798b4',
-                        font=('Segoe UI', 8, 'bold'))
-        style.configure('StatusValue.TLabel', background='#172238', foreground='#e8efff',
-                        font=('Segoe UI', 10, 'bold'))
-        style.configure('TEntry', fieldbackground=FIELD, foreground=TEXT,
-                        insertcolor=TEXT, bordercolor=BORDER, lightcolor=BORDER,
-                        darkcolor=BORDER, padding=9)
-        style.configure('TCombobox', fieldbackground=FIELD, background=FIELD,
-                        foreground=TEXT, arrowcolor=TEXT, bordercolor=BORDER,
-                        lightcolor=BORDER, darkcolor=BORDER, padding=8)
-        style.map('TCombobox',
-                  fieldbackground=[('readonly', FIELD), ('focus', FIELD)],
-                  foreground=[('readonly', TEXT)])
+        style.configure('Title.TLabel', background=BG, foreground=TEXT, font=('Segoe UI', 23, 'bold'))
+        style.configure('Subtitle.TLabel', background=BG, foreground=MUTED, font=('Segoe UI', 10))
+        style.configure('CardTitle.TLabel', background=PANEL, foreground=TEXT, font=('Segoe UI', 13, 'bold'))
+        style.configure('Field.TLabel', background=PANEL, foreground='#aebbd0', font=('Segoe UI', 9, 'bold'))
+        style.configure('Muted.TLabel', background=PANEL, foreground=MUTED, font=('Segoe UI', 9))
+        style.configure('Status.TLabel', background=BG, foreground='#a6f0d2', font=('Segoe UI', 10, 'bold'))
+        style.configure('TEntry', fieldbackground=FIELD, foreground=TEXT, insertcolor=TEXT,
+                        bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER, padding=10)
         style.configure('Primary.TButton', background=PURPLE, foreground='white',
-                        font=('Segoe UI', 10, 'bold'), padding=(17, 10), borderwidth=0)
-        style.map('Primary.TButton',
-                  background=[('disabled', '#4c4a70'), ('active', '#9a90ff')],
-                  foreground=[('disabled', '#c4c1da')])
+                        font=('Segoe UI', 14, 'bold'), padding=(28, 20), borderwidth=0)
+        style.map('Primary.TButton', background=[('disabled', '#4c4a70'), ('active', '#9a90ff')])
         style.configure('Secondary.TButton', background='#26334b', foreground=TEXT,
-                        font=('Segoe UI', 10, 'bold'), padding=(15, 10), borderwidth=0)
+                        font=('Segoe UI', 10, 'bold'), padding=(18, 12), borderwidth=0)
         style.map('Secondary.TButton', background=[('active', '#33435f')])
         style.configure('Copy.TButton', background='#202d43', foreground=TEXT,
                         font=('Segoe UI', 9, 'bold'), padding=(12, 8), borderwidth=0)
         style.map('Copy.TButton', background=[('active', '#33435f')])
+        style.configure('TNotebook', background=BG, borderwidth=0)
+        style.configure('TNotebook.Tab', background=PANEL, foreground=MUTED,
+                        padding=(18, 10), font=('Segoe UI', 9, 'bold'))
+        style.map('TNotebook.Tab', background=[('selected', '#26334b')],
+                  foreground=[('selected', TEXT)])
 
         outer = ttk.Frame(root, style='Shell.TFrame', padding=(24, 20))
         outer.pack(fill='both', expand=True)
-
         header = ttk.Frame(outer, style='Shell.TFrame')
         header.pack(fill='x', pady=(0, 18))
-        heading = ttk.Frame(header, style='Shell.TFrame')
-        heading.pack(side='left', fill='x', expand=True)
-        ttk.Label(heading, text='Voice Reader Pro', style='Title.TLabel').pack(anchor='w')
-        ttk.Label(
-            heading,
-            text='Локальная озвучка текста в голосовом канале Discord',
-            style='Subtitle.TLabel',
-        ).pack(anchor='w', pady=(4, 0))
+        ttk.Label(header, text='Voice Reader Pro', style='Title.TLabel').pack(anchor='w')
+        ttk.Label(header, text='Голосовой помощник для Discord', style='Subtitle.TLabel').pack(anchor='w', pady=(4, 0))
 
         self.status = tk.StringVar(value='Остановлено')
-        self.status_label = ttk.Label(header, textvariable=self.status, style='Status.TLabel')
-        self.status_label.pack(side='right', anchor='n', padx=(10, 0), pady=7)
+        ttk.Label(header, textvariable=self.status, style='Status.TLabel').pack(anchor='e', pady=(8, 0))
 
-        card = ttk.Frame(outer, style='Card.TFrame', padding=20)
-        card.pack(fill='x')
-        ttk.Label(card, text='Подключение', style='CardTitle.TLabel').pack(anchor='w', pady=(0, 15))
-
-        self.fields = {}
-
-        status_strip = ttk.Frame(outer, style='Shell.TFrame')
-        status_strip.pack(before=card, fill='x', pady=(0, 14))
         self.service_states = {
             'discord': tk.StringVar(value='Не запущен'),
             'web': tk.StringVar(value='Не запущен'),
             'tunnel': tk.StringVar(value='Не создана'),
         }
-        for key, title in (('discord', 'DISCORD'), ('web', 'ЛОКАЛЬНЫЙ СЕРВЕР'), ('tunnel', 'ПУБЛИЧНАЯ ССЫЛКА')):
-            tile = ttk.Frame(status_strip, style='StatusCard.TFrame', padding=(13, 10))
-            tile.pack(side='left', fill='x', expand=True, padx=(0, 8))
-            ttk.Label(tile, text=title, style='StatusName.TLabel').pack(anchor='w')
-            ttk.Label(tile, textvariable=self.service_states[key], style='StatusValue.TLabel').pack(anchor='w', pady=(3, 0))
+        notebook = ttk.Notebook(outer)
+        notebook.pack(fill='both', expand=True)
+        self.notebook = notebook
+        home_tab = ttk.Frame(notebook, style='Shell.TFrame', padding=(18, 28))
+        server_tab = ttk.Frame(notebook, style='Shell.TFrame', padding=(18, 18))
+        notebook.add(home_tab, text='Главная')
+        notebook.add(server_tab, text='Сервер')
 
-        def add_field(parent, label, key, show='', row=0, column=0, columnspan=1):
-            cell = ttk.Frame(parent, style='Card.TFrame')
+        home_content = ttk.Frame(home_tab, style='Shell.TFrame')
+        home_content.pack(expand=True, fill='both')
+        ttk.Label(home_content, text='Готов к запуску?', style='Title.TLabel').pack(pady=(38, 10))
+        ttk.Label(home_content, text='Запусти бота — он подключится к голосовому каналу и откроет страницу озвучки.',
+                  style='Subtitle.TLabel', wraplength=480, justify='center').pack(pady=(0, 28))
+        self.start = ttk.Button(home_content, text='▶  Запустить бота',
+                                style='Primary.TButton', command=self.start_service)
+        self.start.pack(fill='x', padx=55, pady=(0, 22))
+        ttk.Button(home_content, text='⚙  Сервер и настройки',
+                   style='Secondary.TButton', command=lambda: notebook.select(server_tab)).pack()
+        ttk.Label(home_content, textvariable=self.service_states['discord'],
+                  style='Subtitle.TLabel').pack(pady=(24, 0))
+
+        server_card = ttk.Frame(server_tab, style='Card.TFrame', padding=20)
+        server_card.pack(fill='x')
+        ttk.Label(server_card, text='Подключение Discord', style='CardTitle.TLabel').pack(anchor='w', pady=(0, 16))
+        self.fields = {}
+
+        def add_field(label, key, show='', row=0, column=0, columnspan=1):
+            cell = ttk.Frame(server_card, style='Card.TFrame')
             cell.grid(row=row, column=column, columnspan=columnspan,
-                      sticky='ew', padx=(0 if column == 0 else 10, 0), pady=(0, 12))
+                      sticky='ew', padx=(0 if column == 0 else 10, 0), pady=(0, 13))
             ttk.Label(cell, text=label, style='Field.TLabel').pack(anchor='w', pady=(0, 6))
             entry = ttk.Entry(cell, show=show)
             entry.insert(0, cfg.get(key, ''))
             entry.pack(fill='x')
             self.fields[key] = entry
 
-        fields_grid = ttk.Frame(card, style='Card.TFrame')
-        fields_grid.pack(fill='x')
-        fields_grid.columnconfigure(0, weight=1)
-        fields_grid.columnconfigure(1, weight=1)
+        server_card.columnconfigure(0, weight=1)
+        server_card.columnconfigure(1, weight=1)
+        add_field('ТОКЕН DISCORD-БОТА', 'token', show='•', row=0, column=0, columnspan=2)
+        add_field('ID СЕРВЕРА', 'guild_id', row=1, column=0)
+        add_field('ID ГОЛОСОВОГО КАНАЛА', 'channel_id', row=1, column=1)
+        ttk.Button(server_card, text='Сохранить настройки', style='Secondary.TButton',
+                   command=self.save_settings).grid(row=2, column=0, sticky='w', pady=(2, 0))
 
-        add_field(fields_grid, 'ТОКЕН DISCORD-БОТА', 'token', show='•', row=0, column=0, columnspan=2)
-        add_field(fields_grid, 'ID СЕРВЕРА', 'guild_id', row=1, column=0)
-        add_field(fields_grid, 'ID ГОЛОСОВОГО КАНАЛА', 'channel_id', row=1, column=1)
+        status_card = ttk.Frame(server_tab, style='Card.TFrame', padding=16)
+        status_card.pack(fill='x', pady=(12, 0))
+        ttk.Label(status_card, text='Состояние сервисов', style='CardTitle.TLabel').pack(anchor='w', pady=(0, 10))
+        for key, title in (('discord', 'DISCORD'), ('web', 'ЛОКАЛЬНЫЙ СЕРВЕР'), ('tunnel', 'ПУБЛИЧНАЯ ССЫЛКА')):
+            line = ttk.Frame(status_card, style='Card.TFrame')
+            line.pack(fill='x', pady=3)
+            ttk.Label(line, text=title, style='Field.TLabel', width=22).pack(side='left')
+            ttk.Label(line, textvariable=self.service_states[key], style='Muted.TLabel').pack(side='left')
 
-        controls = ttk.Frame(card, style='Card.TFrame')
-        controls.pack(fill='x', pady=(2, 6))
-        self.start = ttk.Button(controls, text='▶  Запустить', style='Primary.TButton',
-                                command=self.start_service)
-        self.start.pack(side='left')
-        self.stop = ttk.Button(controls, text='■  Остановить', style='Secondary.TButton',
-                               command=self.stop_service, state='disabled')
-        self.stop.pack(side='left', padx=(10, 0))
-
-        ttk.Label(card, text='ПУБЛИЧНАЯ ССЫЛКА', style='Field.TLabel').pack(anchor='w', pady=(14, 6))
-        link_row = ttk.Frame(card, style='Card.TFrame')
+        link_card = ttk.Frame(server_tab, style='Card.TFrame', padding=16)
+        link_card.pack(fill='x', pady=(12, 0))
+        ttk.Label(link_card, text='Публичная ссылка сайта', style='CardTitle.TLabel').pack(anchor='w', pady=(0, 8))
+        link_row = ttk.Frame(link_card, style='Card.TFrame')
         link_row.pack(fill='x')
         self.link = ttk.Entry(link_row)
         self.link.pack(side='left', fill='x', expand=True)
-        ttk.Button(link_row, text='Копировать', style='Copy.TButton',
-                   command=self.copy).pack(side='left', padx=(10, 0))
+        ttk.Button(link_row, text='Копировать', style='Copy.TButton', command=self.copy).pack(side='left', padx=(10, 0))
 
-        log_card = ttk.Frame(outer, style='Card.TFrame', padding=16)
-        log_card.pack(fill='both', expand=True, pady=(16, 0))
+        log_card = ttk.Frame(server_tab, style='Card.TFrame', padding=14)
+        log_card.pack(fill='both', expand=True, pady=(12, 0))
         log_header = ttk.Frame(log_card, style='Card.TFrame')
-        log_header.pack(fill='x', pady=(0, 9))
+        log_header.pack(fill='x', pady=(0, 8))
         ttk.Label(log_header, text='Журнал работы', style='CardTitle.TLabel').pack(side='left')
-        ttk.Label(log_header, text='События Discord · TTS · сервера',
-                  style='Muted.TLabel').pack(side='right')
-        ttk.Button(log_header, text='Очистить', style='Copy.TButton', command=self.clear_log).pack(side='right', padx=(0, 8))
+        ttk.Button(log_header, text='Очистить', style='Copy.TButton', command=self.clear_log).pack(side='right')
         ttk.Button(log_header, text='Копировать журнал', style='Copy.TButton', command=self.copy_log).pack(side='right', padx=(0, 8))
-
         log_body = ttk.Frame(log_card, style='Card.TFrame')
         log_body.pack(fill='both', expand=True)
         self.log_body = log_body
-        # The Text widget must be created with log_body as its actual Tk parent.
-        # Packing a child of log_card into its own descendant raises TclError.
-        self.log = tk.Text(
-            log_body,
-            height=12,
-            state='normal',
-            bg='#080e19',
-            fg='#c9d5e8',
-            insertbackground=TEXT,
-            selectbackground='#4b4f83',
-            selectforeground='white',
-            relief='flat',
-            borderwidth=0,
-            padx=12,
-            pady=10,
-            wrap='word',
-            font=('Consolas', 9),
-        )
+        self.log = tk.Text(log_body, height=9, state='normal', bg='#080e19', fg='#c9d5e8',
+                           insertbackground=TEXT, selectbackground='#4b4f83',
+                           selectforeground='white', relief='flat', borderwidth=0,
+                           padx=12, pady=10, wrap='word', font=('Consolas', 9))
         self.log.pack(side='left', fill='both', expand=True)
         log_scroll = ttk.Scrollbar(log_body, orient='vertical', command=self.log.yview)
         log_scroll.pack(side='right', fill='y')
@@ -207,14 +173,6 @@ class App:
         self.log.bind('<Control-A>', self.select_all_log)
         self.log.bind('<Button-3>', self.show_log_menu)
 
-        footer = ttk.Label(
-            outer,
-            text='Голоса выбираются на веб-странице отдельно для каждого сообщения. Настройки подключения сохраняются на этом компьютере.',
-            style='Subtitle.TLabel',
-        )
-        footer.pack(anchor='w', pady=(12, 0))
-
-        # Per-entry paste handlers: no global binding, so a paste is applied once.
         for entry in [*self.fields.values(), self.link]:
             entry.bind('<Control-KeyPress>', self.handle_entry_control)
             entry.bind('<Shift-Insert>', self.paste_entry)
