@@ -97,10 +97,11 @@ class ModeSelector:
 
     def close(self):
         if self.child is not None and self.child.poll() is None:
-            try:
-                self.child.terminate()
-            except Exception:
-                pass
+            messagebox.showwarning(
+                APP_NAME,
+                "Сначала закрой окно запущенного режима. Так приложение успеет корректно остановить звук и фоновые процессы."
+            )
+            return
         self.root.destroy()
 
 
