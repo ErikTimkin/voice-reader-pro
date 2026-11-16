@@ -50,7 +50,7 @@ class LiveVoiceApp:
         header = ttk.Frame(outer, style="Live.TFrame")
         header.pack(fill="x", pady=(0, 14))
         ttk.Label(header, text="Изменение голоса", style="LiveTitle.TLabel").pack(anchor="w")
-        ttk.Label(header, text="Эффекты микрофона и AI-преобразование в реальном времени", style="LiveSub.TLabel").pack(anchor="w", pady=(3, 0))
+        ttk.Label(header, text="Эффекты микрофона и изменение голоса в реальном времени", style="LiveSub.TLabel").pack(anchor="w", pady=(3, 0))
         if on_back:
             ttk.Button(header, text="← Все режимы", style="Live.TButton", command=self.back).pack(anchor="e", pady=(8, 0))
 
