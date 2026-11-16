@@ -103,6 +103,19 @@ class ModeSelector:
 
 def main() -> int:
     if len(sys.argv) > 1:
+        if sys.argv[1] == "--voice-smoke-test" and len(sys.argv) >= 3:
+            from voice_reader.app import run_frozen_voice_smoke_test
+            return run_frozen_voice_smoke_test(sys.argv[2])
+        if sys.argv[1] == "--ui-smoke-test":
+            from voice_reader.app import run_frozen_ui_smoke_test
+            return run_frozen_ui_smoke_test()
+        if sys.argv[1] == "--launcher-smoke-test":
+            root = tk.Tk()
+            root.withdraw()
+            ModeSelector(root)
+            root.update_idletasks()
+            root.destroy()
+            return 0
         if sys.argv[1] == "--mode-text":
             return _run_mode("text")
         if sys.argv[1] == "--mode-live":
