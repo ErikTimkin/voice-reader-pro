@@ -15,12 +15,16 @@ The live audio path is:
 
 ```
 Physical microphone
-  -> Voice Reader Pro live process
-  -> microphone DSP (48 kHz / 20 ms target blocks)
+  -> Voice Reader Pro live process / sounddevice capture
+  -> Pedalboard DSP (48 kHz preferred, 44.1 kHz fallback)
   -> CABLE Input (VB-Audio Virtual Cable)
-  -> CABLE Output (Windows recording device)
-  -> Discord microphone selection
+  -> CABLE Output (Windows recording endpoint)
+  -> Discord / game / OBS microphone input
 ```
+
+The initial callback block is 20 ms (960 samples at 48 kHz). Actual end-to-end latency
+depends on the Windows audio driver, selected devices and system load. The app does not
+inject audio into Discord and does not use the text bot's Discord connection.
 
 The live process does not use the text bot's Discord bot token, TTS service, web server,
 voice profiles or message queue. The text process does not import the live audio engine.
@@ -36,16 +40,22 @@ A static architecture test checks these import boundaries.
 - Error handling that silences output rather than emitting corrupted audio.
 
 VB-CABLE is a separate Windows driver. It is not silently installed by the application.
-Choose **CABLE Input** as the live app's output and **CABLE Output** as the microphone
-in Discord. Use headphones to avoid feedback.
+Download it only from https://vb-audio.com/Cable/, install it separately (administrator
+permission may be required), and restart Windows if the new endpoints do not appear.
+Choose the physical microphone as the live app's input and **CABLE Input** as its output.
+Choose **CABLE Output** as the microphone in Discord or the target application. Use
+headphones to avoid feedback. Do not select CABLE Output as the physical input in Voice
+Reader Pro.
+
+Live headphone monitoring is not included in this first milestone.
 
 ## AI voice conversion
 
-AI voice conversion is intentionally deferred. This milestone focuses on stable standard
-DSP effects and reliable microphone routing. The previous TeraTTS experiment is text-to-
-speech, not microphone-to-microphone conversion, so it is not used as a substitute for
-live AI conversion. A local neural RVC engine can be evaluated only after the standard
-live path has passed real microphone and Discord testing.
+AI voice conversion, voice cloning and character impersonation are not included in this
+milestone. This stage focuses only on standard DSP effects and reliable microphone routing.
+The previous TeraTTS experiment is text-to-speech, not microphone-to-microphone conversion,
+so it is not used as a substitute for live AI conversion. A local neural RVC engine can be
+evaluated only after the standard live path has passed real microphone and Discord testing.
 
 ## Build and validation
 
