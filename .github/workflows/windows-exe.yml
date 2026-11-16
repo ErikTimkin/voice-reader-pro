@@ -97,6 +97,12 @@ jobs:
           $exe = Join-Path $PWD 'dist/VoiceReaderPro/VoiceReaderPro.exe'
           $process = Start-Process -FilePath $exe -ArgumentList @('--launcher-smoke-test') -Wait -PassThru -WindowStyle Hidden
           if ($process.ExitCode -ne 0) { throw "Mode selector smoke test failed with exit code $($process.ExitCode)" }
+      - name: Smoke-test live voice UI and DSP in packaged EXE
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD 'dist/VoiceReaderPro/VoiceReaderPro.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--live-ui-smoke-test') -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) { throw "Live voice UI/DSP smoke test failed with exit code $($process.ExitCode)" }
       - name: Smoke-test desktop UI and log widget
         shell: pwsh
         run: |
