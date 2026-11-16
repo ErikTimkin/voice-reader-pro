@@ -70,7 +70,7 @@ jobs:
           Write-Host "Downloaded Russian Silero model: $ruSize bytes"
           Write-Host "Downloaded Silero CIS Armenian-accent model: $cisSize bytes"
       - name: Check source
-        run: python -m compileall -q voice_reader tests
+        run: python -m compileall -q launcher.py voice_reader tests
       - name: Verify text/live module isolation
         run: python tests/module_isolation_smoke.py
       - name: Test isolated live microphone DSP
