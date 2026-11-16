@@ -22,7 +22,7 @@ class LiveVoiceApp:
         self._poll_job = None
         self.ai_process = None
 
-        root.title("Voice Reader Pro — Голосовая озвучка")
+        root.title("Voice Reader Pro — Изменение голоса")
         root.geometry("760x720")
         root.minsize(650, 620)
         root.configure(bg="#090d18")
@@ -53,8 +53,8 @@ class LiveVoiceApp:
         outer.pack(fill="both", expand=True)
         header = ttk.Frame(outer, style="Live.TFrame")
         header.pack(fill="x", pady=(0, 14))
-        ttk.Label(header, text="Голосовая озвучка", style="LiveTitle.TLabel").pack(anchor="w")
-        ttk.Label(header, text="Измени голос с микрофона в реальном времени", style="LiveSub.TLabel").pack(anchor="w", pady=(3, 0))
+        ttk.Label(header, text="Изменение голоса", style="LiveTitle.TLabel").pack(anchor="w")
+        ttk.Label(header, text="Эффекты микрофона и AI-преобразование в реальном времени", style="LiveSub.TLabel").pack(anchor="w", pady=(3, 0))
         if on_back:
             ttk.Button(header, text="← Все режимы", style="Live.TButton", command=self.back).pack(anchor="e", pady=(8, 0))
 
