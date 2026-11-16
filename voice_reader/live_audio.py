@@ -314,14 +314,30 @@ class LiveVoiceEngine:
         if self._board is None:
             self.configure(self._preset, self._settings)
 
-        selected_rate = SAMPLE_RATE
-        try:
-            sd.check_input_settings(device=input_device, channels=1, dtype="float32", samplerate=selected_rate)
-            sd.check_output_settings(device=output_device, channels=1, dtype="float32", samplerate=selected_rate)
-        except Exception:
-            selected_rate = 44_100
-            sd.check_input_settings(device=input_device, channels=1, dtype="float32", samplerate=selected_rate)
-            sd.check_output_settings(device=output_device, channels=1, dtype="float32", samplerate=selected_rate)
+        # Negotiate a rate supported by BOTH selected endpoints. USB headsets,
+        # Bluetooth devices and virtual cables do not all expose 48/44.1 kHz.
+        input_info = sd.query_devices(int(input_device))
+        output_info = sd.query_devices(int(output_device))
+        candidates = [SAMPLE_RATE, 44_100, 32_000, 24_000, 16_000]
+        candidates.extend([
+            int(round(float(input_info.get("default_samplerate", SAMPLE_RATE)))),
+            int(round(float(output_info.get("default_samplerate", SAMPLE_RATE)))),
+        ])
+        selected_rate = None
+        rate_errors = []
+        for candidate in dict.fromkeys(candidates):
+            try:
+                sd.check_input_settings(device=input_device, channels=1, dtype="float32", samplerate=candidate)
+                sd.check_output_settings(device=output_device, channels=1, dtype="float32", samplerate=candidate)
+                selected_rate = candidate
+                break
+            except Exception as exc:
+                rate_errors.append(f"{candidate} Гц: {exc}")
+        if selected_rate is None:
+            raise RuntimeError(
+                "Микрофон и виртуальный кабель не имеют общей поддерживаемой частоты дискретизации. "
+                + " | ".join(rate_errors[-3:])
+            )
 
         with self._lock:
             if selected_rate != self._sample_rate:
