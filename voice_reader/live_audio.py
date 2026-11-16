@@ -188,13 +188,24 @@ def list_audio_devices() -> list[dict[str, Any]]:
     """Return audio devices without making assumptions about device names."""
     _, sd, _ = _audio_libraries()
     devices = []
+    host_apis = sd.query_hostapis()
+    default_input, default_output = sd.default.device
     for index, device in enumerate(sd.query_devices()):
         inputs = int(device.get("max_input_channels", 0))
         outputs = int(device.get("max_output_channels", 0))
         if inputs or outputs:
+            host_api_index = int(device.get("hostapi", -1))
+            host_api_name = (
+                str(host_apis[host_api_index].get("name", "Unknown"))
+                if 0 <= host_api_index < len(host_apis) else "Unknown"
+            )
             devices.append({
                 "index": index,
                 "name": str(device.get("name", f"Audio device {index}")),
+                "hostapi": host_api_index,
+                "hostapi_name": host_api_name,
+                "is_default_input": index == default_input,
+                "is_default_output": index == default_output,
                 "inputs": inputs,
                 "outputs": outputs,
                 "default_samplerate": float(device.get("default_samplerate", SAMPLE_RATE)),
