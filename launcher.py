@@ -101,6 +101,37 @@ class ModeSelector:
         self.root.destroy()
 
 
+def run_live_ui_smoke_test() -> int:
+    """Exercise the packaged live UI and DSP without requiring a physical mic."""
+    import numpy as np
+    from voice_reader.live_voice_ui import LiveVoiceApp
+
+    root = tk.Tk()
+    root.withdraw()
+    app = None
+    try:
+        app = LiveVoiceApp(root)
+        root.update_idletasks()
+        if not app.start_button.winfo_exists() or not app.input_combo.winfo_exists():
+            raise RuntimeError("Live voice UI was not created completely")
+        sample_rate = 48_000
+        samples = np.arange(sample_rate, dtype=np.float32) / sample_rate
+        source = (0.15 * np.sin(2.0 * np.pi * 220.0 * samples)).astype(np.float32)
+        app.engine.configure("Низкий")
+        processed = app.engine.process_block(source)
+        if processed.shape != source.shape or not np.isfinite(processed).all():
+            raise RuntimeError("Live DSP failed in the packaged UI smoke test")
+        if float(np.sqrt(np.mean(np.square(processed)))) < 0.001:
+            raise RuntimeError("Live DSP returned silent audio in the packaged UI smoke test")
+        root.update()
+        return 0
+    finally:
+        if app is not None:
+            app.close()
+        elif root.winfo_exists():
+            root.destroy()
+
+
 def main() -> int:
     if len(sys.argv) > 1:
         if sys.argv[1] == "--voice-smoke-test" and len(sys.argv) >= 3:
@@ -109,6 +140,8 @@ def main() -> int:
         if sys.argv[1] == "--ui-smoke-test":
             from voice_reader.app import run_frozen_ui_smoke_test
             return run_frozen_ui_smoke_test()
+        if sys.argv[1] == "--live-ui-smoke-test":
+            return run_live_ui_smoke_test()
         if sys.argv[1] == "--launcher-smoke-test":
             root = tk.Tk()
             root.withdraw()
