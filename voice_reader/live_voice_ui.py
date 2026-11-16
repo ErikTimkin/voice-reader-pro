@@ -118,6 +118,8 @@ class LiveVoiceApp:
         control.pack(fill="x", pady=(2, 0))
         self.status = tk.StringVar(value="Остановлено")
         ttk.Label(control, textvariable=self.status, style="LiveStatus.TLabel").pack(anchor="w", pady=(0, 8))
+        self.signal_status = tk.StringVar(value="Уровни звука: вход —, выход —")
+        ttk.Label(control, textvariable=self.signal_status, style="LiveSub.TLabel").pack(anchor="w", pady=(0, 8))
         self.start_button = ttk.Button(control, text="▶  Включить голосовой эффект",
                                         style="LivePrimary.TButton", command=self.toggle)
         self.start_button.pack(fill="x")
@@ -210,7 +212,7 @@ class LiveVoiceApp:
         try:
             self.engine.start(input_device["index"], output_device["index"])
             self.start_button.configure(text="■  Выключить голосовой эффект")
-            self.status.set(f"Работает · {self.engine._sample_rate // 1000} кГц")
+            self.status.set(f"Аудиопоток запущен · {self.engine._sample_rate} Гц")
         except Exception as exc:
             self.engine.stop()
             messagebox.showerror("Voice Reader Pro", f"Не удалось запустить микрофон: {exc}")
@@ -222,6 +224,7 @@ class LiveVoiceApp:
         finally:
             self.start_button.configure(text="▶  Включить голосовой эффект")
             self.status.set("Остановлено")
+            self.signal_status.set("Уровни звука: вход —, выход —")
 
     def _schedule_poll(self):
         self._poll_job = self.root.after(250, self._poll)
@@ -234,8 +237,20 @@ class LiveVoiceApp:
             finally:
                 self.start_button.configure(text="▶  Включить голосовой эффект")
                 self.status.set(f"Ошибка обработки: {error}")
-        elif self.engine.last_status and self.engine.running:
-            self.status.set(f"Работает · {self.engine.last_status}")
+        elif self.engine.running:
+            if self.engine.callback_count == 0:
+                self.status.set("Ожидание первых аудиоданных…")
+            elif self.engine.input_level < 0.0005:
+                self.status.set("Нет сигнала микрофона — проверь устройство ввода и разрешения Windows")
+            elif self.engine.output_level < 0.0005:
+                self.status.set("Микрофон слышен, но обработанный выход почти беззвучен")
+            else:
+                self.status.set(f"Обработка идёт · {self.engine._sample_rate} Гц")
+            self.signal_status.set(
+                f"Уровни звука: вход {self.engine.input_level:.3f} · выход {self.engine.output_level:.3f}"
+            )
+            if self.engine.last_status:
+                self.status.set(f"{self.status.get()} · {self.engine.last_status}")
         if self.root.winfo_exists():
             self._schedule_poll()
 
