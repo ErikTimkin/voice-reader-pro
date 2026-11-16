@@ -146,7 +146,7 @@ class LiveVoiceApp:
         self.output_lookup = {}
         inputs, outputs = [], []
         for device in self.devices:
-            label = f'{device["index"]} — {device["name"]}'
+            label = f'{device["index"]} — {device["name"]} [{device.get("hostapi_name", "audio")}]'
             if device["inputs"] > 0:
                 inputs.append(label)
                 self.input_lookup[label] = device
@@ -156,10 +156,25 @@ class LiveVoiceApp:
         self.input_combo["values"] = inputs
         self.output_combo["values"] = outputs
         if inputs and self.input_var.get() not in self.input_lookup:
-            preferred = next((x for x in inputs if "microphone" in x.lower() or "микрофон" in x.lower()), inputs[0])
+            physical_inputs = [
+                x for x in inputs
+                if "cable output" not in x.lower() and "vb-audio" not in x.lower()
+            ]
+            preferred = next(
+                (x for x in physical_inputs if self.input_lookup[x].get("is_default_input")),
+                None,
+            )
+            if preferred is None:
+                preferred = next(
+                    (x for x in physical_inputs
+                     if "microphone" in x.lower() or "микрофон" in x.lower()),
+                    physical_inputs[0] if physical_inputs else inputs[0],
+                )
             self.input_var.set(preferred)
         if outputs and self.output_var.get() not in self.output_lookup:
-            cable = next((x for x in outputs if "cable input" in x.lower() or "vb-audio" in x.lower()), None)
+            cable = next((x for x in outputs if "cable input" in x.lower()), None)
+            if cable is None:
+                cable = next((x for x in outputs if "vb-audio" in x.lower()), None)
             self.output_var.set(cable or outputs[0])
         if not inputs or not outputs:
             self.status.set("Не найдены устройства ввода или вывода.")
@@ -207,6 +222,15 @@ class LiveVoiceApp:
             messagebox.showwarning(
                 "Voice Reader Pro",
                 "Выбери CABLE Input (VB-Audio Virtual Cable). Иначе обработанный звук не появится как виртуальный микрофон."
+            )
+            return
+        if input_device.get("hostapi") != output_device.get("hostapi"):
+            messagebox.showwarning(
+                "Voice Reader Pro",
+                "Микрофон и CABLE Input выбраны через разные аудиодрайверы. "
+                "Выбери варианты с одинаковой пометкой в квадратных скобках "
+                "(например, оба WASAPI или оба MME). Устройства с одинаковым именем "
+                "могут встречаться в списке несколько раз."
             )
             return
         try:
