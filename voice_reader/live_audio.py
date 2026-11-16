@@ -222,6 +222,9 @@ class LiveVoiceEngine:
         self._preset = "Обычный"
         self.last_error: str | None = None
         self.last_status: str = ""
+        self.input_level = 0.0
+        self.output_level = 0.0
+        self.callback_count = 0
 
     @property
     def running(self) -> bool:
@@ -305,6 +308,9 @@ class LiveVoiceEngine:
         self._np = np
         self.last_error = None
         self.last_status = ""
+        self.input_level = 0.0
+        self.output_level = 0.0
+        self.callback_count = 0
         if self._board is None:
             self.configure(self._preset, self._settings)
 
@@ -326,10 +332,12 @@ class LiveVoiceEngine:
                 self._history_count = 0
                 self._pitch_shifter = self._make_pitch_shifter(self._settings, selected_rate)
 
+        # Use a 20 ms block at the negotiated rate, not a fixed 48 kHz block.
+        block_size = max(1, round(selected_rate * 0.020))
         stream = sd.Stream(
             device=(int(input_device), int(output_device)),
             samplerate=selected_rate,
-            blocksize=BLOCK_SIZE,
+            blocksize=block_size,
             channels=(1, 1),
             dtype="float32",
             latency="low",
@@ -372,9 +380,13 @@ class LiveVoiceEngine:
         if status:
             self.last_status = str(status)
         try:
+            self.callback_count += 1
+            self.input_level = float(self._np.sqrt(self._np.mean(indata[:, 0] ** 2))) if frames else 0.0
             outdata[:, 0] = self.process_block(indata[:, 0])
+            self.output_level = float(self._np.sqrt(self._np.mean(outdata[:, 0] ** 2))) if frames else 0.0
         except Exception as exc:
             self.last_error = f"{type(exc).__name__}: {exc}"
+            self.output_level = 0.0
             outdata.fill(0)
 
     def stop(self) -> None:
