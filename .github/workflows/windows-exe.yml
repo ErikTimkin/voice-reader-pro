@@ -2,7 +2,7 @@ name: Build Windows EXE
 on:
   workflow_dispatch:
   push:
-    branches: [main, fix/armenian-pop-runtime, experiment/four-voice-pack, fix/armenian-stable-playback]
+    branches: [main, fix/armenian-pop-runtime, experiment/four-voice-pack, fix/armenian-stable-playback, feature/separate-text-and-live-bots, review/live-voice-recheck-348]
 permissions:
   contents: read
 concurrency:
@@ -68,7 +68,11 @@ jobs:
           Write-Host "Downloaded Russian Silero model: $ruSize bytes"
           Write-Host "Downloaded Silero CIS Armenian-accent model: $cisSize bytes"
       - name: Check source
-        run: python -m compileall -q voice_reader tests
+        run: python -m compileall -q launcher.py voice_reader tests
+      - name: Verify text/live module isolation
+        run: python tests/module_isolation_smoke.py
+      - name: Test isolated live microphone DSP
+        run: python tests/live_audio_smoke.py
       - name: Test Russian number pronunciation
         run: python tests/number_normalizer_smoke.py
       - name: Test eleven voice selector options and Enter behavior
@@ -85,6 +89,18 @@ jobs:
         run: python tests/voice_pipeline_smoke.py
       - name: Build EXE
         run: pyinstaller --noconfirm --clean build.spec
+      - name: Smoke-test mode selector UI
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD 'dist/VoiceReaderPro/VoiceReaderPro.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--launcher-smoke-test') -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) { throw "Mode selector smoke test failed with exit code $($process.ExitCode)" }
+      - name: Smoke-test live voice UI and DSP in packaged EXE
+        shell: pwsh
+        run: |
+          $exe = Join-Path $PWD 'dist/VoiceReaderPro/VoiceReaderPro.exe'
+          $process = Start-Process -FilePath $exe -ArgumentList @('--live-ui-smoke-test') -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) { throw "Live voice UI/DSP smoke test failed with exit code $($process.ExitCode)" }
       - name: Smoke-test desktop UI and log widget
         shell: pwsh
         run: |
