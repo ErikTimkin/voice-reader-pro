@@ -4,7 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches: [main, fix/armenian-pop-runtime, experiment/four-voice-pack, fix/armenian-stable-playback, feature/separate-text-and-live-bots]
+    branches: [main, fix/armenian-pop-runtime, experiment/four-voice-pack, fix/armenian-stable-playback, feature/separate-text-and-live-bots, review/live-voice-recheck-348]
 permissions:
   contents: read
 concurrency:
