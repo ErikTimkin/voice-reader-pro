@@ -14,3 +14,4 @@ pyarrow==22.0.0
 transformers==5.14.0
 huggingface-hub==1.33.0
 tokenizers==0.22.2
+\nsounddevice==0.5.2\npedalboard==0.9.26\n
