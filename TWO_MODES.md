@@ -41,12 +41,21 @@ in Discord. Use headphones to avoid feedback.
 
 ## AI voice conversion
 
-The DSP effects are not neural voice conversion. An offline AI voice-conversion engine
-requires a compatible model, runtime, model license and a real-time latency test on the
-target PC. The previous TeraTTS experiment is text-to-speech, not microphone-to-microphone
-voice conversion, so it must not be presented as live AI conversion. Keep that engine
-separate from the stable text selector until an actual offline voice-conversion model
-has been selected and validated.
+The live-mode window has a separate **AI-преобразование (RVC)** action. It launches the
+independent vc-gui.exe process from the open-source vc-rs project; it does not merge
+its Rust runtime or model files into the text bot or the standard DSP engine.
+
+On first use, download and extract a Windows GUI + CLI package from
+https://github.com/shirohata/vc-rs/releases, then choose vc-gui.exe in Voice Reader Pro.
+The selected path is saved locally. The RVC app guides the user through its support-model
+setup; the target voice checkpoint is supplied by the user. The vc-rs project offers a
+Windows ML package for broad GPU support and a TensorRT package for NVIDIA GPUs. Review
+its own app and model terms before downloading or using models.
+
+The RVC package is deliberately not silently downloaded or redistributed by this project:
+it is a separate third-party application with its own licenses and model dependencies.
+TeraTTS is text-to-speech, not microphone-to-microphone conversion, and is not used as a
+substitute for RVC.
 
 ## Build and validation
 
