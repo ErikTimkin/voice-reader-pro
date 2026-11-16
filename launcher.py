@@ -62,6 +62,7 @@ class ModeSelector:
         ttk.Label(outer, text="Выбери, какой режим запустить", style="Sub.TLabel").pack(anchor="w", pady=(5, 22))
 
         self.status = tk.StringVar(value="Оба режима изолированы друг от друга")
+        self.mode_buttons = []
         for title, desc, mode, button_text in (
             ("Текстовый бот", "Озвучивает сообщения, отправленные через веб-страницу, в голосовом канале Discord.\nСтабильная версия №348.", "text", "▶  Запустить текстовый бот"),
             ("Изменение голоса", "Обрабатывает звук с микрофона в реальном времени.\nЭффекты микрофона, ручная настройка и вывод обработанного звука в Discord через VB-CABLE.", "live", "▶  Запустить изменение голоса"),
@@ -70,8 +71,10 @@ class ModeSelector:
             card.pack(fill="x", pady=8)
             ttk.Label(card, text=title, style="CardTitle.TLabel").pack(anchor="w")
             ttk.Label(card, text=desc, style="CardSub.TLabel", justify="left").pack(anchor="w", pady=(7, 15))
-            ttk.Button(card, text=button_text, style="Mode.TButton",
-                       command=lambda m=mode: self.launch(m)).pack(fill="x")
+            button = ttk.Button(card, text=button_text, style="Mode.TButton",
+                                command=lambda m=mode: self.launch(m))
+            button.pack(fill="x")
+            self.mode_buttons.append(button)
         ttk.Label(outer, textvariable=self.status, style="Status.TLabel").pack(anchor="w", pady=(14, 0))
         root.protocol("WM_DELETE_WINDOW", self.close)
         self._poll()
@@ -145,8 +148,10 @@ def main() -> int:
         if sys.argv[1] == "--launcher-smoke-test":
             root = tk.Tk()
             root.withdraw()
-            ModeSelector(root)
+            selector = ModeSelector(root)
             root.update_idletasks()
+            if len(selector.mode_buttons) != 2 or not all(button.winfo_exists() for button in selector.mode_buttons):
+                raise RuntimeError("Both mode selection buttons must be visible")
             root.destroy()
             return 0
         if sys.argv[1] == "--mode-text":
