@@ -48,9 +48,11 @@ its Rust runtime or model files into the text bot or the standard DSP engine.
 On first use, download and extract a Windows GUI + CLI package from
 https://github.com/shirohata/vc-rs/releases, then choose vc-gui.exe in Voice Reader Pro.
 The selected path is saved locally. The RVC app guides the user through its support-model
-setup; the target voice checkpoint is supplied by the user. The vc-rs project offers a
-Windows ML package for broad GPU support and a TensorRT package for NVIDIA GPUs. Review
-its own app and model terms before downloading or using models.
+setup; the target voice checkpoint is supplied by the user. Select the physical microphone
+and CABLE Input as output inside the RVC app, then choose CABLE Output as the microphone
+in Discord. The vc-rs project offers a Windows ML package for broad GPU support and a
+TensorRT package for NVIDIA GPUs. Review its own app and model terms before downloading
+or using models.
 
 The RVC package is deliberately not silently downloaded or redistributed by this project:
 it is a separate third-party application with its own licenses and model dependencies.
