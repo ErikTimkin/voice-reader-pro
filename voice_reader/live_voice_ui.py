@@ -1,9 +1,12 @@
 """Tkinter UI for the separate live microphone mode."""
 from __future__ import annotations
 
+import os
+import subprocess
 import tkinter as tk
 import webbrowser
-from tkinter import messagebox, ttk
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
 
 from voice_reader.live_audio import LiveVoiceEngine, PRESETS, list_audio_devices
 
@@ -17,6 +20,7 @@ class LiveVoiceApp:
         self.input_lookup = {}
         self.output_lookup = {}
         self._poll_job = None
+        self.ai_process = None
 
         root.title("Voice Reader Pro — Голосовая озвучка")
         root.geometry("760x720")
@@ -70,6 +74,8 @@ class LiveVoiceApp:
         ttk.Button(device_actions, text="Обновить устройства", style="Live.TButton", command=self.refresh_devices).pack(side="left")
         ttk.Button(device_actions, text="Установить VB-CABLE", style="Live.TButton",
                    command=lambda: webbrowser.open("https://vb-audio.com/Cable/")).pack(side="right")
+        ttk.Button(device_actions, text="AI-преобразование (RVC)", style="Live.TButton",
+                   command=self.launch_ai_voice).pack(side="right", padx=(0, 8))
         ttk.Label(devices_card,
                   text="В Discord выбери CABLE Output как устройство ввода. Здесь выбирается CABLE Input.",
                   style="LiveSub.TLabel", wraplength=650).pack(anchor="w", pady=(9, 0))
@@ -129,6 +135,52 @@ class LiveVoiceApp:
         self.engine.configure("Обычный")
         self.root.protocol("WM_DELETE_WINDOW", self.close)
         self._schedule_poll()
+
+    def launch_ai_voice(self):
+        """Launch the optional neural RVC converter as an independent process."""
+        if self.ai_process is not None and self.ai_process.poll() is None:
+            messagebox.showinfo("Voice Reader Pro", "AI-преобразование уже запущено.")
+            return
+        if self.engine.running:
+            self.stop()
+        data_dir = Path(os.getenv("APPDATA", Path.home())) / "VoiceReaderPro"
+        config_path = data_dir / "ai_rvc_exe.txt"
+        executable = None
+        try:
+            saved = config_path.read_text(encoding="utf-8").strip()
+            if saved and Path(saved).is_file():
+                executable = Path(saved)
+        except OSError:
+            pass
+        if executable is None:
+            messagebox.showinfo(
+                "AI-преобразование голоса",
+                "Это отдельный локальный RVC-движок. Скачай Windows GUI + CLI пакет "
+                "vc-rs со страницы релизов, распакуй его целиком и выбери vc-gui.exe. "
+                "При первом запуске движок предложит подготовить служебные модели; "
+                "также понадобится собственная RVC-модель голоса."
+            )
+            webbrowser.open("https://github.com/shirohata/vc-rs/releases")
+            selected = filedialog.askopenfilename(
+                title="Выбери vc-gui.exe из распакованного пакета vc-rs",
+                filetypes=[("Windows executable", "*.exe")],
+            )
+            if not selected:
+                return
+            executable = Path(selected)
+            if executable.name.lower() != "vc-gui.exe":
+                messagebox.showerror("Voice Reader Pro", "Нужно выбрать именно vc-gui.exe.")
+                return
+            try:
+                data_dir.mkdir(parents=True, exist_ok=True)
+                config_path.write_text(str(executable.resolve()), encoding="utf-8")
+            except OSError as exc:
+                messagebox.showwarning("Voice Reader Pro", f"Не удалось сохранить путь к AI-приложению: {exc}")
+        try:
+            self.ai_process = subprocess.Popen([str(executable)], cwd=str(executable.parent))
+            self.status.set("Запущено отдельное AI-приложение RVC")
+        except Exception as exc:
+            messagebox.showerror("Voice Reader Pro", f"Не удалось запустить AI-преобразование: {exc}")
 
     def refresh_devices(self):
         try:
@@ -236,6 +288,10 @@ class LiveVoiceApp:
                 self.status.set(f"Ошибка обработки: {error}")
         elif self.engine.last_status and self.engine.running:
             self.status.set(f"Работает · {self.engine.last_status}")
+        if self.ai_process is not None and self.ai_process.poll() is not None:
+            self.ai_process = None
+            if not self.engine.running:
+                self.status.set("AI-приложение закрыто")
         if self.root.winfo_exists():
             self._schedule_poll()
 
@@ -259,4 +315,9 @@ class LiveVoiceApp:
             except tk.TclError:
                 pass
         self.engine.close()
+        if self.ai_process is not None and self.ai_process.poll() is None:
+            try:
+                self.ai_process.terminate()
+            except Exception:
+                pass
         self.root.destroy()
