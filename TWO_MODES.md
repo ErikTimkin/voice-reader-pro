@@ -41,23 +41,11 @@ in Discord. Use headphones to avoid feedback.
 
 ## AI voice conversion
 
-The live-mode window has a separate **AI-преобразование (RVC)** action. It launches the
-independent vc-gui.exe process from the open-source vc-rs project; it does not merge
-its Rust runtime or model files into the text bot or the standard DSP engine.
-
-On first use, download and extract a Windows GUI + CLI package from
-https://github.com/shirohata/vc-rs/releases, then choose vc-gui.exe in Voice Reader Pro.
-The selected path is saved locally. The RVC app guides the user through its support-model
-setup; the target voice checkpoint is supplied by the user. Select the physical microphone
-and CABLE Input as output inside the RVC app, then choose CABLE Output as the microphone
-in Discord. The vc-rs project offers a Windows ML package for broad GPU support and a
-TensorRT package for NVIDIA GPUs. Review its own app and model terms before downloading
-or using models.
-
-The RVC package is deliberately not silently downloaded or redistributed by this project:
-it is a separate third-party application with its own licenses and model dependencies.
-TeraTTS is text-to-speech, not microphone-to-microphone conversion, and is not used as a
-substitute for RVC.
+AI voice conversion is intentionally deferred. This milestone focuses on stable standard
+DSP effects and reliable microphone routing. The previous TeraTTS experiment is text-to-
+speech, not microphone-to-microphone conversion, so it is not used as a substitute for
+live AI conversion. A local neural RVC engine can be evaluated only after the standard
+live path has passed real microphone and Discord testing.
 
 ## Build and validation
 
